@@ -1,0 +1,331 @@
+use std::collections::HashMap;
+
+use glam::Vec4Swizzles;
+
+use crate::ae3d::Camera::{Camera, Drawable};
+
+use super::{Transformable::Transformable2D, Window::Window};
+
+#[derive(Clone, Debug)]
+pub struct Animation
+{
+	repeat: i32,
+	repeated: i32,
+	frames: Vec<(u8, f32)>,
+	currentTime: f32,
+	currentFrame: usize
+}
+
+impl Animation
+{
+	pub fn new() -> Self
+	{
+		Self
+		{
+			repeat: 0,
+			repeated: 0,
+			frames: vec![],
+			currentFrame: 0,
+			currentTime: 0.0
+		}
+	}
+
+	pub fn parse(base: &json::JsonValue) -> Self
+	{
+		let mut anim = Animation::new();
+
+		for (var, value) in base.entries()
+		{
+			if var == "repeat"
+			{
+				anim.repeat = value.as_i32().unwrap();
+			}
+			if var == "frames"
+			{
+				for f in value.members()
+				{
+					let mut id = 0;
+					let mut duration = 0.0;
+					for (x, y) in f.entries()
+					{
+						if x == "id"
+						{
+							id = y.as_u8().unwrap();
+						}
+						if x == "duration"
+						{
+							duration = y.as_f32().unwrap();
+						}
+					}
+					anim.frames.push((id, duration));
+				}
+			}
+		}
+
+		anim
+	}
+
+	pub fn update(&mut self)
+	{
+		if self.repeated >= self.repeat && self.repeat != 0 { return; }
+
+		self.currentTime += crate::ae3d::Window::Window::getDeltaTime();
+		if self.currentTime >= self.frames[self.currentFrame].1
+		{
+			self.currentTime -= self.frames[self.currentFrame].1;
+			self.currentFrame += 1;
+		}
+		if self.currentFrame > self.frames.len() - 1
+		{
+			if self.repeat == 0 { self.currentFrame = 0; self.currentTime = 0.0; }
+			else
+			{
+				self.repeated += 1;
+			}
+		}
+		self.currentFrame = self.currentFrame.clamp(0, self.frames.len() - 1);
+	}
+
+	pub fn getCurrentFrame(&self) -> u8 { self.frames[self.currentFrame].0 }
+}
+
+#[derive(Clone)]
+pub struct Sprite
+{
+	animations: HashMap<String, Animation>,
+	currentAnimation: String,
+	frames: Vec<glam::Vec4>,
+	texture: u32,
+	rect: glam::Vec4,
+	texSize: glam::Vec2,
+	ts: Transformable2D,
+	color: glam::Vec4,
+	frameSize: glam::Vec2
+}
+
+impl Sprite
+{
+	pub fn default() -> Self
+	{
+		Self
+		{
+			animations: HashMap::new(),
+			currentAnimation: String::new(),
+			frames: vec![],
+			texture: 0,
+			rect: glam::Vec4::ZERO,
+			texSize: glam::Vec2::ZERO,
+			ts: Transformable2D::new(),
+			color: glam::Vec4::ONE,
+			frameSize: glam::Vec2::ZERO
+		}
+	}
+
+	pub fn animated(path: String) -> Self
+	{
+		let mut spr = Self::default();
+
+		let src = json::parse(
+			&std::fs::read_to_string(path).unwrap_or(String::new())
+		);
+		if src.is_err() { return spr; }
+		let src = src.unwrap();
+
+		let mut frame = glam::ivec2(0, 0);
+		let mut w = 0;
+		let mut h = 0;
+
+		for (section, value) in src.entries()
+		{
+			if section == "texture"
+			{
+				spr.texture = Window::getTexture(value.as_str().unwrap().to_string());
+				unsafe
+				{
+					gl::BindTexture(gl::TEXTURE_2D, spr.texture);
+					gl::GetTexLevelParameteriv(
+						gl::TEXTURE_2D, 0,
+						gl::TEXTURE_WIDTH, &mut w
+					);
+					gl::GetTexLevelParameteriv(
+						gl::TEXTURE_2D, 0,
+						gl::TEXTURE_HEIGHT, &mut h
+					);
+				}
+			}
+			if section == "size"
+			{
+				let mut s = value.members();
+				frame = glam::ivec2(
+					s.nth(0).unwrap().as_i32().unwrap(),
+					s.nth(0).unwrap().as_i32().unwrap()
+				);
+			}
+			if section == "anims"
+			{
+				for (name, data) in value.entries()
+				{
+					spr.animations.insert(
+						name.to_string(),
+						Animation::parse(data)
+					);
+				}
+			}
+		}
+
+		spr.texSize = glam::vec2(w as f32, h as f32);
+		
+		spr.calculateFrames((w, h), frame);
+
+		spr
+	}
+
+	pub fn image(path: String) -> Self
+	{
+		let mut spr = Sprite::default();
+		spr.texture = Window::getTexture(path);
+		let mut w = 0;
+		let mut h = 0;
+		unsafe
+		{
+			gl::BindTexture(gl::TEXTURE_2D, spr.texture);
+			gl::GetTexLevelParameteriv(
+				gl::TEXTURE_2D, 0,
+				gl::TEXTURE_WIDTH, &mut w
+			);
+			gl::GetTexLevelParameteriv(
+				gl::TEXTURE_2D, 0,
+				gl::TEXTURE_HEIGHT, &mut h
+			);
+		}
+		spr.texSize = glam::vec2(w as f32, h as f32);
+		spr.frameSize = spr.texSize;
+		spr.rect = glam::vec4(0.0, 0.0, spr.frameSize.x, spr.frameSize.y);
+		spr
+	}
+
+	pub fn update(&mut self)
+	{
+		if self.animations.len() == 0 { return; }
+		if let Some(anim) = self.animations.get_mut(&self.currentAnimation)
+		{
+			anim.update();
+		}
+	}
+
+	fn calculateFrames(&mut self, size: (i32, i32), frame: glam::IVec2)
+	{
+		self.frames.clear();
+		let mut x = 0;
+		let mut y = 0;
+		while y < size.1
+		{
+			while x < size.0
+			{
+				self.frames.push(glam::vec4(
+					x as f32,
+					y as f32,
+					frame.x as f32,
+					frame.y as f32
+				));
+				x += frame.x;
+			}
+			y += frame.y;
+			x = 0;
+		}
+		self.frameSize = glam::vec2(frame.x as f32, frame.y as f32);
+	}
+
+	pub fn getCurrentFrame(&mut self) -> glam::Vec4
+	{
+		if self.frames.len() == 0 { return glam::Vec4::ZERO; }
+		if self.animations.len() == 0 { return glam::Vec4::ZERO; }
+		self.frames[self.animations.get(&self.currentAnimation)
+		.unwrap().getCurrentFrame() as usize]
+	}
+
+	pub fn setAnimation(&mut self, name: String)
+	{
+		if name == self.currentAnimation { return; }
+		if self.animations.get(&name).is_none() { return; }
+		self.currentAnimation = name;
+		self.restart();
+	}
+
+	pub fn restart(&mut self)
+	{
+		if let Some(x) = self.animations.get_mut(&self.currentAnimation)
+		{
+			x.repeated = 0;
+			x.currentFrame = 0;
+			x.currentTime = 0.0;
+		}
+	}
+
+	pub fn setTextureRect(&mut self, rect: glam::Vec4)
+	{
+		self.rect = rect;
+		self.frameSize = rect.zw();
+	}
+
+	pub fn getTransformable(&mut self) -> &mut Transformable2D
+	{
+		&mut self.ts
+	}
+
+	pub fn getFrameSize(&self) -> glam::Vec2
+	{
+		self.frameSize
+	}
+
+	pub fn setColor(&mut self, clr: (u8, u8, u8, u8))
+	{
+		self.color = glam::vec4(
+			clr.0 as f32 / 255.0,
+			clr.1 as f32 / 255.0,
+			clr.2 as f32 / 255.0,
+			clr.3 as f32 / 255.0
+		);
+	}
+
+	pub fn getBounds(&mut self) -> glam::Vec4
+	{
+		let s = self.getFrameSize();
+		let m = self.ts.getMatrix();
+		let p1 = m * glam::vec4(0.0, 0.0, 0.0, 1.0);
+		let p2 = m * glam::vec4(s.x, 0.0, 0.0, 1.0);
+		let p3 = m * glam::vec4(s.x, s.y, 0.0, 1.0);
+		let p4 = m * glam::vec4(0.0, s.y, 0.0, 1.0);
+		
+		let min = p1.min(p2).min(p3).min(p4);
+		let max = p1.max(p2).max(p3).max(p4);
+		glam::vec4(min.x, min.y, max.x - min.x, max.y - min.y)
+	}
+
+	pub fn getTexture(&self) -> u32 { self.texture }
+
+	pub fn getTexSize(&self) -> glam::Vec2 { self.texSize }
+}
+
+impl Drawable for Sprite
+{
+	fn draw(&mut self, cam: &mut Camera)
+	{
+		self.update();
+		cam.shaderUse("sprite");
+		cam.shaderVec4("frame",
+			if self.animations.len() == 0 { self.rect }
+			else { self.getCurrentFrame() }
+		);
+		cam.shaderVec2("texSize", self.texSize);
+		cam.shaderMat4("model", self.ts.getMatrix());
+		cam.shaderVec4("color", self.color);
+		unsafe
+		{
+			// gl::ActiveTexture(gl::TEXTURE0);
+			gl::BindTexture(gl::TEXTURE_2D, self.texture);
+			Window::getCamera().genericVAO();
+			gl::DrawArrays(gl::QUADS, 0, 4);
+		}
+	}
+}

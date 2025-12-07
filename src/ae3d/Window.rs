@@ -1,0 +1,577 @@
+use std::collections::HashMap;
+use glfw::Context;
+
+use crate::ae3d::{Network::Network, Profiler::Profiler, World::World};
+
+use super::{Camera::Camera, Programmable::{Programmable, Variable}, UI::UI};
+
+pub struct Window
+{
+	context: glfw::Glfw,
+	pub window: Option<glfw::PWindow>,
+	events: Option<glfw::GlfwReceiver<(f64, glfw::WindowEvent)>>,
+	deltaTime: f32,
+	lastTime: std::time::Instant,
+	pub prog: Programmable,
+	pub mouseEvent: Option<(glfw::MouseButton, glfw::Action, glfw::Modifiers)>,
+	pub keyEvent: Option<(glfw::Key, glfw::Action, glfw::Modifiers)>,
+	pub inputEvent: Option<char>,
+	pub scrollEvent: Option<f32>,
+	pub dndEvent: Option<Vec<String>>,
+	cam: Camera,
+	textures: HashMap<String, u32>,
+	ui: UI,
+	net: Network,
+	world: World,
+	server: Option<std::process::Child>,
+	profiler: Profiler
+}
+
+impl Window
+{
+	pub fn default() -> Window
+	{
+		use glfw::fail_on_errors;
+		Window
+		{
+			context: glfw::init(glfw::fail_on_errors!()).unwrap(),
+			window: None,
+			events: None,
+			deltaTime: 0.0,
+			lastTime: std::time::Instant::now(),
+			prog: Programmable::new(),
+			mouseEvent: None,
+			keyEvent: None,
+			cam: Camera::new(),
+			textures: HashMap::new(),
+			ui: UI::new(),
+			net: Network::new(),
+			inputEvent: None,
+			world: World::new(),
+			server: None,
+			scrollEvent: None,
+			dndEvent: None,
+			profiler: Profiler::new()
+		}
+	}
+
+	pub fn getInstance() -> &'static mut Window
+	{
+		static mut INSTANCE: Option<Window> = None;
+		unsafe
+		{
+			if INSTANCE.is_none() { INSTANCE = Some(Window::default()); }
+			INSTANCE.as_mut().unwrap()
+		}
+	}
+	
+	pub fn init(path: &str)
+	{
+		let cfg = json::parse(
+			&std::fs::read_to_string(path)
+			.unwrap_or(String::new())
+		);
+		if cfg.is_err() { return; }
+		let cfg = cfg.unwrap();
+		
+		let i = Window::getInstance();
+
+		i.context.window_hint(glfw::WindowHint::ContextVersion(2, 1));
+
+		let mut title = "ae3d";
+		let mut size = glam::vec2(1280.0, 720.0);
+		let mut vsync = true;
+		let mut fullscreen = false;
+		let mut uiPath = "";
+		let mut iconPath = "";
+
+		for (name, section) in cfg.entries()
+		{
+			if name == "main"
+			{
+				for (x, y) in section.entries()
+				{
+					if x == "title" { title = y.as_str().unwrap(); }
+					if x == "vsync" { vsync = y.as_bool().unwrap(); }
+					if x == "fullscreen" { fullscreen = y.as_bool().unwrap(); }
+					if x == "size"
+					{
+						let mut s = y.members();
+						size = glam::vec2(
+							s.nth(0).unwrap().as_f32().unwrap(),
+							s.nth(0).unwrap().as_f32().unwrap()
+						);
+					}
+					if x == "uiSize"
+					{
+						let mut s = y.members();
+						i.ui.setSize(glam::vec2(
+							s.nth(0).unwrap().as_f32().unwrap(),
+							s.nth(0).unwrap().as_f32().unwrap()
+						));
+					}
+					if x == "uiPath"
+					{
+						uiPath = y.as_str().unwrap();
+					}
+					if x == "icon"
+					{
+						iconPath = y.as_str().unwrap();
+					}
+				}
+			}
+			if name == "custom"
+			{
+				for (name, value) in section.entries()
+				{
+					let num = value.as_f32().unwrap_or(0.0);
+					let s = value.as_str().unwrap_or_default().to_string();
+					i.prog.insert(
+						name.to_string(),
+						Variable
+						{
+							num,
+							string: if num == 0.0 { s } else { String::new()}
+						}
+					);
+				}
+			}
+		}
+
+		if fullscreen
+		{
+			vsync = true;
+			i.context.with_primary_monitor(|g, monitor|
+			{
+				if let Some(m) = monitor
+				{
+					if let Some(s) = m.get_video_mode()
+					{
+						size = glam::vec2(s.width as f32, s.height as f32);
+						g.window_hint(glfw::WindowHint::RedBits(Some(s.red_bits)));
+						g.window_hint(glfw::WindowHint::GreenBits(Some(s.green_bits)));
+						g.window_hint(glfw::WindowHint::BlueBits(Some(s.blue_bits)));
+						g.window_hint(glfw::WindowHint::Decorated(false));
+					}
+				}
+			})
+		}
+		let (mut window, events) =
+			i.context.create_window(size.x as u32, size.y as u32,
+			title,
+			glfw::WindowMode::Windowed
+		).unwrap();
+
+		window.set_mouse_button_polling(true);
+		window.set_key_polling(true);
+		window.set_size_polling(true);
+		window.set_char_polling(true);
+		window.set_scroll_polling(true);
+		window.set_drag_and_drop_polling(true);
+		window.make_current();
+
+		if !iconPath.is_empty()
+		{
+			match stb_image::image::load(iconPath)
+			{
+				stb_image::image::LoadResult::Error(x) =>
+				{
+					println!("Failed to load icon: {x}")
+				}
+				stb_image::image::LoadResult::ImageF32(_) =>
+				{
+					println!("Cannot load F32 images yet")
+				}
+				stb_image::image::LoadResult::ImageU8(data) =>
+				{
+					let mut pixels: Vec<u32> = vec![];
+					for i in 0..data.width * data.height
+					{
+						let offset = i * 4;
+						pixels.push(u32::from_le_bytes([
+							data.data[offset],
+							data.data[offset + 1],
+							data.data[offset + 2],
+							data.data[offset + 3]
+						]));
+					}
+					window.set_icon_from_pixels(vec![glfw::PixelImage {
+						width: data.width as u32,
+						height: data.height as u32,
+						pixels
+					}]);
+				}
+			}
+		}
+		
+		gl::load_with(|name| i.context.get_proc_address_raw(name));
+
+		i.context.set_swap_interval(
+			if vsync { glfw::SwapInterval::Sync(1) }
+			else { glfw::SwapInterval::None }
+		);
+
+		i.window = Some(window);
+		i.events = Some(events);
+
+		i.cam.load();
+		
+		unsafe
+		{
+			gl::Enable(gl::DEPTH_TEST);
+			gl::Disable(gl::STENCIL_TEST);
+			gl::StencilMask(0xFF);
+			gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
+			gl::StencilOp(gl::KEEP, gl::REPLACE, gl::REPLACE);
+			gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+			gl::Viewport(0, 0, size.x as i32, size.y as i32);
+
+			println!("{}", Self::getGLString(gl::VERSION));
+			println!("{}", Self::getGLString(gl::VENDOR));
+			println!("{}", Self::getGLString(gl::RENDERER));
+		}
+
+		i.ui.load(uiPath);
+	}
+
+	pub fn getGLString(s: gl::types::GLenum) -> String
+	{
+		unsafe
+		{
+			let v = gl::GetString(s);
+			let mut size: isize = 0;
+			let mut vector: Vec<u8> = vec![];
+			while v.offset(size).read() != 0
+			{
+				vector.push(v.offset(size).read());
+				size += 1;
+			}
+			String::from_utf8(vector).unwrap()
+		}
+	}
+
+	pub fn update()
+	{
+		let i = Window::getInstance();
+
+		i.profiler.restart();
+
+		i.mouseEvent = None;
+		i.keyEvent = None;
+		i.inputEvent = None;
+		i.scrollEvent = None;
+		i.dndEvent = None;
+		i.deltaTime = i.lastTime.elapsed().as_secs_f32().min(0.1);
+		i.lastTime = std::time::Instant::now();
+		
+		let events = i.events.as_ref().unwrap();
+		let window = i.window.as_mut().unwrap();
+		
+		i.context.poll_events();
+		for (_, event) in glfw::flush_messages(events)
+		{
+			match event
+			{
+				glfw::WindowEvent::Close =>
+				{
+					window.set_should_close(true);
+					i.net = Network::new();
+				}
+				glfw::WindowEvent::MouseButton(b, a, m) =>
+				{
+					i.mouseEvent = Some((b, a, m));
+				}
+				glfw::WindowEvent::Key(k, _, a, m) =>
+				{
+					i.keyEvent = Some((k, a, m));
+				}
+				glfw::WindowEvent::Size(w, h) =>
+				{
+					i.cam.setSize((w, h));
+					i.ui.resize();
+					unsafe
+					{
+						gl::Viewport(0, 0, w, h);
+					}
+				}
+				glfw::WindowEvent::Char(c) =>
+				{
+					i.inputEvent = Some(c);
+				}
+				glfw::WindowEvent::Scroll(_, dist) =>
+				{
+					i.scrollEvent = Some(dist as f32);
+				}
+				glfw::WindowEvent::FileDrop(files) =>
+				{
+					i.dndEvent = Some(
+						files.iter().map(|x|
+							x.to_string_lossy().to_string())
+							.collect::<Vec<String>>()
+					);
+				}
+				e => println!("{e:?}")
+			}
+		}
+
+		i.profiler.save("winUpdate".to_string());
+
+		i.ui.updateReload();
+		i.world.update();
+		i.ui.update();
+	}
+
+	pub fn render()
+	{
+		let i = Window::getInstance();
+
+		if i.window.as_mut().unwrap().is_iconified() { return; }
+
+		i.cam.clear();
+		i.cam.toggleTransform(true);
+		i.cam.draw(&mut i.world);
+		i.cam.toggleTransform(false);
+		i.cam.display();
+		i.cam.draw(&mut i.ui);
+		i.profiler.restart();
+		i.window.as_mut().unwrap().swap_buffers();
+		i.profiler.save("swap".to_string());
+	}
+
+	pub fn display()
+	{
+		if Window::getInstance().window.as_mut().unwrap().is_iconified() { return; }
+		unsafe
+		{
+			let x = gl::GetError();
+			if x != 0 { println!("GL Error: {x}"); }
+		}
+		Window::getInstance().window.as_mut().unwrap().swap_buffers();
+	}
+
+	pub fn getSize() -> (i32, i32)
+	{
+		Window::getInstance().window.as_ref().unwrap().get_size()
+	}
+
+	pub fn isOpen() -> bool
+	{
+		!Window::getInstance().window.as_ref().unwrap().should_close()
+	}
+
+	pub fn close()
+	{
+		Window::getInstance().window.as_mut().unwrap().set_should_close(true);
+	}
+
+	pub fn getCamera() -> &'static mut Camera
+	{
+		&mut Window::getInstance().cam
+	}
+
+	pub fn getUI() -> &'static mut UI
+	{
+		&mut Window::getInstance().ui
+	}
+
+	pub fn getDeltaTime() -> f32 { Window::getInstance().deltaTime }
+
+	pub fn resetDT()
+	{
+		Window::getInstance().lastTime = std::time::Instant::now();
+	}
+
+	pub fn strToMB(name: String) -> glfw::MouseButton
+	{
+		match name.as_str()
+		{
+			"Left" => glfw::MouseButton::Button1,
+			"Right" => glfw::MouseButton::Button2,
+			"Middle" => glfw::MouseButton::Button3,
+			_ => glfw::MouseButton::Button8
+		}
+	}
+
+	pub fn strToKey(name: String) -> glfw::Key
+	{
+		match name.as_str()
+		{
+			"A" => glfw::Key::A,
+			"B" => glfw::Key::B,
+			"C" => glfw::Key::C,
+			"D" => glfw::Key::D,
+			"E" => glfw::Key::E,
+			"F" => glfw::Key::F,
+			"G" => glfw::Key::G,
+			"H" => glfw::Key::H,
+			"I" => glfw::Key::I,
+			"J" => glfw::Key::J,
+			"K" => glfw::Key::K,
+			"L" => glfw::Key::L,
+			"M" => glfw::Key::M,
+			"N" => glfw::Key::N,
+			"O" => glfw::Key::O,
+			"P" => glfw::Key::P,
+			"Q" => glfw::Key::Q,
+			"R" => glfw::Key::R,
+			"S" => glfw::Key::S,
+			"T" => glfw::Key::T,
+			"U" => glfw::Key::U,
+			"V" => glfw::Key::V,
+			"W" => glfw::Key::W,
+			"X" => glfw::Key::X,
+			"Y" => glfw::Key::Y,
+			"Z" => glfw::Key::Z,
+			"Num0" => glfw::Key::Num0,
+			"Num1" => glfw::Key::Num1,
+			"Num2" => glfw::Key::Num2,
+			"Num3" => glfw::Key::Num3,
+			"Num4" => glfw::Key::Num4,
+			"Num5" => glfw::Key::Num5,
+			"Num6" => glfw::Key::Num6,
+			"Num7" => glfw::Key::Num7,
+			"Num8" => glfw::Key::Num8,
+			"Num9" => glfw::Key::Num9,
+			"Escape" => glfw::Key::Escape,
+			"Enter" => glfw::Key::Enter,
+			"Backspace" => glfw::Key::Backspace,
+			"Space" => glfw::Key::Space,
+			"F1" => glfw::Key::F1,
+			"F2" => glfw::Key::F2,
+			"F3" => glfw::Key::F3,
+			"F4" => glfw::Key::F4,
+			"F5" => glfw::Key::F5,
+			"F6" => glfw::Key::F6,
+			"F7" => glfw::Key::F7,
+			"F8" => glfw::Key::F8,
+			"F9" => glfw::Key::F9,
+			"F10" => glfw::Key::F10,
+			"F11" => glfw::Key::F11,
+			"F12" => glfw::Key::F12,
+			"Left" => glfw::Key::Left,
+			"Right" => glfw::Key::Right,
+			"Up" => glfw::Key::Up,
+			"Down" => glfw::Key::Down,
+			"Home" => glfw::Key::Home,
+			"End" => glfw::Key::End,
+			"LShift" => glfw::Key::LeftShift,
+			"RShift" => glfw::Key::RightShift,
+			"LCtrl" => glfw::Key::LeftControl,
+			"RCtrl" => glfw::Key::RightControl,
+			"LAlt" => glfw::Key::LeftAlt,
+			"RAlt" => glfw::Key::RightAlt,
+			"Tab" => glfw::Key::Tab,
+			"Minus" => glfw::Key::Minus,
+			"Equal" => glfw::Key::Equal,
+			"KpSubtract" => glfw::Key::KpSubtract,
+			"KpAdd" => glfw::Key::KpAdd,
+			_ => glfw::Key::Unknown
+		}
+	}
+
+	pub fn strToMod(name: String) -> glfw::Modifiers
+	{
+		match name.as_str()
+		{
+			"Control" => glfw::Modifiers::Control,
+			"Shift" => glfw::Modifiers::Shift,
+			"Alt" => glfw::Modifiers::Alt,
+			"Super" => glfw::Modifiers::Super,
+			"NumLock" => glfw::Modifiers::NumLock,
+			_ => glfw::Modifiers::CapsLock
+		}
+	}
+
+	pub fn getTexture(path: String) -> u32
+	{
+		let tex = &mut Window::getInstance().textures;
+		if let Some(t) = tex.get(&path) { return *t; }
+		
+		match stb_image::image::load(path.clone())
+		{
+			stb_image::image::LoadResult::ImageU8(data) =>
+			{
+				let mut t = 0;
+				unsafe
+				{
+					gl::GenTextures(1, &mut t);
+					gl::BindTexture(gl::TEXTURE_2D, t);
+
+					gl::TexImage2D(
+						gl::TEXTURE_2D,
+						0,
+						gl::RGBA as i32,
+						data.width as i32,
+						data.height as i32,
+						0,
+						gl::RGBA,
+						gl::UNSIGNED_BYTE,
+						data.data.as_ptr() as *const _
+					);
+					
+					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
+					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
+					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
+					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+				}
+
+				tex.insert(path, t);
+				t
+			},
+			stb_image::image::LoadResult::ImageF32(_) =>
+			{
+				println!("Failed to load texture from {path}: unable to read F32 type.");
+				0
+			}
+			stb_image::image::LoadResult::Error(s) =>
+			{
+				println!("Error on reading texture from {path}:\n{s}");
+				0
+			}
+		}
+	}
+
+	pub fn getNetwork() -> &'static mut Network
+	{
+		&mut Window::getInstance().net
+	}
+
+	pub fn getWorld() -> &'static mut World
+	{
+		&mut Window::getInstance().world
+	}
+
+	pub fn clearCache()
+	{
+		let i = Window::getInstance();
+		i.textures.clear();
+		i.cam.clearShaders();
+	}
+
+	pub fn launchServer()
+	{
+		let i = Window::getInstance();
+		let ext = if std::env::consts::OS == "windows" { ".exe" } else { "" };
+		let path = if cfg!(debug_assertions)
+		{
+			String::from("./target/debug/envell") + ext
+		} else { String::from("./res/system/server") + ext };
+		i.server = Some(
+			std::process::Command::new(path).arg("silent").spawn().unwrap()
+		);
+	}
+
+	pub fn setMousePos(pos: glam::Vec2)
+	{
+		let w = Window::getInstance().window.as_mut().unwrap();
+		w.set_cursor_pos(
+			pos.x as f64,
+			pos.y as f64
+		);
+	}
+
+	pub fn getProfiler() -> &'static mut Profiler
+	{
+		&mut Self::getInstance().profiler
+	}
+}
