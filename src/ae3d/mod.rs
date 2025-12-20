@@ -11,3 +11,5 @@ pub mod World;
 pub mod Entity;
 pub mod Profiler;
 pub mod Mesh;
+pub mod glTF;
+pub mod Skeleton;

@@ -14,6 +14,7 @@ pub struct Camera
 	stencil: u32,
 	offscreen: u32,
 	genericVAO: u32, genericVBO: u32,
+	meshVAO: u32, meshVBO: u32,
 	uiProj: glam::Mat4,
 	worldProj: glam::Mat4,
 	useTS: bool,
@@ -34,6 +35,7 @@ impl Camera
 			stencil: 0,
 			offscreen: 0,
 			genericVAO: 0, genericVBO: 0,
+			meshVAO: 0, meshVBO: 0,
 			uiProj: glam::Mat4::IDENTITY,
 			worldProj: glam::Mat4::IDENTITY,
 			useTS: false,
@@ -101,6 +103,36 @@ impl Camera
 			gl::BufferData(gl::ARRAY_BUFFER,
 				(8 * size_of::<f32>()) as _,
 					[0.0_f32, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0].as_ptr() as _,
+				gl::STATIC_DRAW
+			);
+			
+			gl::GenVertexArrays(1, &mut self.meshVAO);
+			gl::GenBuffers(1, &mut self.meshVBO);
+
+			gl::BindVertexArray(self.meshVAO);
+			gl::BindBuffer(gl::ARRAY_BUFFER, self.meshVBO);
+
+			gl::EnableVertexAttribArray(0);
+
+			gl::VertexAttribPointer(
+				0, 3, gl::FLOAT, gl::FALSE,
+				(3 * size_of::<f32>()) as i32, 0 as _
+			);
+
+			let mesh: [f32; 72] = [
+				0.0, 0.0, 0.0,	1.0, 0.0, 0.0,	1.0, 1.0, 0.0,	0.0, 1.0, 0.0,
+				0.0, 0.0, 1.0,	1.0, 0.0, 1.0,	1.0, 1.0, 1.0,	0.0, 1.0, 1.0,
+
+				0.0, 0.0, 0.0,	0.0, 0.0, 1.0,	0.0, 1.0, 1.0,	0.0, 1.0, 0.0,
+				1.0, 0.0, 0.0,	1.0, 0.0, 1.0,	1.0, 1.0, 1.0,	1.0, 1.0, 0.0,
+
+				0.0, 0.0, 0.0,	1.0, 0.0, 0.0,	1.0, 0.0, 1.0,	0.0, 0.0, 1.0,
+				0.0, 1.0, 0.0,	1.0, 1.0, 0.0,	1.0, 1.0, 1.0,	0.0, 1.0, 1.0,
+			];
+
+			gl::BufferData(gl::ARRAY_BUFFER,
+				(mesh.len() * size_of::<f32>()) as _,
+					mesh.as_ptr() as _,
 				gl::STATIC_DRAW
 			);
 
@@ -195,6 +227,11 @@ impl Camera
 		self.bindVAO(self.genericVAO);
 	}
 
+	pub fn meshVAO(&mut self)
+	{
+		self.bindVAO(self.meshVAO);
+	}
+
 	pub fn bindVAO(&mut self, vao: u32)
 	{
 		if self.currentVAO == vao { return; }
@@ -207,24 +244,49 @@ impl Camera
 		&mut self.ts
 	}
 
-	pub fn drawRect(&mut self, ts: glam::Mat4, clr: glam::Vec4)
+	pub fn drawRect2D(&mut self, ts: glam::Mat4, clr: glam::Vec4)
 	{
 		self.shaderUse("shape");
 		self.shaderMat4("model", ts);
 		self.shaderVec4("clr", clr);
+		self.shaderInt("shape", 0);
 		self.shaderInt("mode", 0);
 		self.genericVAO();
 		unsafe { gl::DrawArrays(gl::QUADS, 0, 4); }
 	}
 
-	pub fn drawLine(&mut self, p1: glam::Vec2, p2: glam::Vec2, clr: glam::Vec4)
+	pub fn drawLine2D(&mut self, p1: glam::Vec2, p2: glam::Vec2, clr: glam::Vec4)
 	{
 		self.shaderUse("shape");
 		self.shaderVec4("clr", clr);
-		self.shaderVec2("p1", p1);
-		self.shaderVec2("p2", p2);
-		self.shaderInt("mode", 1);
+		self.shaderVec3("p1", glam::vec3(p1.x, p1.y, 0.0));
+		self.shaderVec3("p2", glam::vec3(p2.x, p2.y, 0.0));
+		self.shaderInt("shape", 1);
+		self.shaderInt("mode", 0);
 		self.genericVAO();
+		unsafe { gl::DrawArrays(gl::LINES, 0, 2); }
+	}
+
+	pub fn drawRect3D(&mut self, ts: glam::Mat4, clr: glam::Vec4)
+	{
+		self.shaderUse("shape");
+		self.shaderMat4("model", ts);
+		self.shaderVec4("clr", clr);
+		self.shaderInt("shape", 0);
+		self.shaderInt("mode", 1);
+		self.meshVAO();
+		unsafe { gl::DrawArrays(gl::QUADS, 0, 24); }
+	}
+
+	pub fn drawLine3D(&mut self, p1: glam::Vec3, p2: glam::Vec3, clr: glam::Vec4)
+	{
+		self.shaderUse("shape");
+		self.shaderVec4("clr", clr);
+		self.shaderVec3("p1", p1);
+		self.shaderVec3("p2", p2);
+		self.shaderInt("shape", 1);
+		self.shaderInt("mode", 1);
+		self.meshVAO();
 		unsafe { gl::DrawArrays(gl::LINES, 0, 2); }
 	}
 
@@ -389,6 +451,22 @@ impl Camera
 				gl::GetUniformLocation(
 					self.currentShader, cn.as_ptr()
 				), value.x, value.y, value.z, value.w
+			);
+		}
+	}
+
+	pub fn shaderMat4Array(&self, name: &str, value: &Vec<glam::Mat4>)
+	{
+		let cn = std::ffi::CString::new(name).unwrap();
+		let mut v = vec![];
+		for x in value { v.append(&mut x.to_cols_array().to_vec()); }
+		unsafe
+		{
+			gl::UniformMatrix4fv(
+				gl::GetUniformLocation(
+					self.currentShader, cn.as_ptr()
+				), value.len() as i32, gl::FALSE,
+				v.as_ptr()
 			);
 		}
 	}

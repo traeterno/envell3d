@@ -5,6 +5,7 @@
 		"network",
 		"mesh",
 		"world",
-		"text"
+		"text",
+		"shapes3D"
 	]
 }

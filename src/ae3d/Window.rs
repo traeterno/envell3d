@@ -219,6 +219,7 @@ impl Window
 		unsafe
 		{
 			gl::Enable(gl::DEPTH_TEST);
+			gl::Enable(gl::BLEND);
 			gl::Disable(gl::STENCIL_TEST);
 			gl::StencilMask(0xFF);
 			gl::StencilFunc(gl::NOTEQUAL, 1, 0xFF);
@@ -352,6 +353,23 @@ impl Window
 	pub fn getSize() -> (i32, i32)
 	{
 		Window::getInstance().window.as_ref().unwrap().get_size()
+	}
+
+	pub fn getScreenSize() -> (i32, i32)
+	{
+		let i = Window::getInstance();
+		let x = i.context.with_primary_monitor(|_, m|
+		{
+			if let Some(monitor) = m
+			{
+				if let Some(vm) = monitor.get_video_mode()
+				{
+					return (vm.width as i32, vm.height as i32);
+				}
+			}
+			(0, 0)
+		});
+		x
 	}
 
 	pub fn isOpen() -> bool
@@ -568,6 +586,11 @@ impl Window
 			pos.x as f64,
 			pos.y as f64
 		);
+	}
+
+	pub fn isFocused() -> bool
+	{
+		Window::getInstance().window.as_mut().unwrap().is_focused()
 	}
 
 	pub fn getProfiler() -> &'static mut Profiler

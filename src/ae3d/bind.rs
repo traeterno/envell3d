@@ -885,6 +885,12 @@ pub fn window(script: &Lua)
 	{
 		Ok(Window::getSize())
 	}).unwrap());
+
+	let _ = table.raw_set("screenSize",
+	script.create_function(|_, _: ()|
+	{
+		Ok(Window::getScreenSize())
+	}).unwrap());
 	
 	let _ = table.raw_set("clearCache",
 	script.create_function(|_, _: ()|
@@ -1090,6 +1096,12 @@ pub fn window(script: &Lua)
 		else { Ok(0.0) }
 	}).unwrap());
 
+	let _ = table.raw_set("isFocused",
+	script.create_function(|_, _: ()|
+	{
+		Ok(Window::isFocused())
+	}).unwrap());
+
 	let _ = script.globals().raw_set("window", table);
 }
 
@@ -1258,7 +1270,7 @@ pub fn world(script: &Lua)
 	let _ = script.globals().raw_set("world", t);
 }
 
-pub fn shapes(script: &Lua)
+pub fn shapes2D(script: &Lua)
 {
 	let t = script.create_table().unwrap();
 
@@ -1276,7 +1288,7 @@ pub fn shapes(script: &Lua)
 		let g = args.raw_get::<f32>("g").unwrap_or(0.0) / 255.0;
 		let b = args.raw_get::<f32>("b").unwrap_or(0.0) / 255.0;
 		let a = args.raw_get::<f32>("a").unwrap_or(255.0) / 255.0;
-		Window::getCamera().drawRect(
+		Window::getCamera().drawRect2D(
 			Transformable2D::quick(
 				glam::vec2(x, y), angle,
 				glam::vec2(w, h),
@@ -1294,7 +1306,76 @@ pub fn shapes(script: &Lua)
 		Ok(())
 	}).unwrap());
 
-	let _ = script.globals().raw_set("shapes", t);
+	let _ = script.globals().raw_set("shapes2D", t);
+}
+
+pub fn shapes3D(script: &Lua)
+{
+	let t = script.create_table().unwrap();
+
+	let _ = t.raw_set("rect",
+	script.create_function(|_, args: mlua::Table|
+	{
+		// let x = args.raw_get::<f32>("x").unwrap_or(0.0);
+		// let y = args.raw_get::<f32>("y").unwrap_or(0.0);
+		// let z = args.raw_get::<f32>("z").unwrap_or(0.0);
+		// let ox = args.raw_get::<f32>("ox").unwrap_or(0.0);
+		// let oy = args.raw_get::<f32>("oy").unwrap_or(0.0);
+		// let oz = args.raw_get::<f32>("oz").unwrap_or(0.0);
+		// let w = args.raw_get::<f32>("w").unwrap_or(1.0);
+		// let h = args.raw_get::<f32>("h").unwrap_or(1.0);
+		// let d = args.raw_get::<f32>("d").unwrap_or(1.0);
+		// // let angle = args.raw_get::<f32>("angle").unwrap_or(0.0);
+		let r = args.raw_get::<f32>("r").unwrap_or(0.0) / 255.0;
+		let g = args.raw_get::<f32>("g").unwrap_or(0.0) / 255.0;
+		let b = args.raw_get::<f32>("b").unwrap_or(0.0) / 255.0;
+		let a = args.raw_get::<f32>("a").unwrap_or(255.0) / 255.0;
+		// Window::getCamera().drawRect3D(
+		// 	Transformable3D::quick(
+		// 		glam::vec2(x, y), angle,
+		// 		glam::vec2(w, h),
+		// 		glam::vec2(ox, oy)
+		// 	), glam::vec4(r, g, b, a)
+		// );
+		Window::getCamera().drawRect3D(glam::Mat4::IDENTITY,
+			glam::vec4(r, g, b, a)
+		);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.raw_set("line",
+	script.create_function(|_, args: mlua::Table|
+	{
+		Window::getCamera().drawLine3D(
+			glam::vec3(
+				args.raw_get::<f32>("x1").unwrap_or(0.0),
+				args.raw_get::<f32>("y1").unwrap_or(0.0),
+				args.raw_get::<f32>("z1").unwrap_or(0.0)
+			),
+			glam::vec3(
+				args.raw_get::<f32>("x2").unwrap_or(0.0),
+				args.raw_get::<f32>("y2").unwrap_or(0.0),
+				args.raw_get::<f32>("z2").unwrap_or(0.0)
+			),
+			glam::vec4(
+				args.raw_get::<f32>("r").unwrap_or(0.0),
+				args.raw_get::<f32>("g").unwrap_or(0.0),
+				args.raw_get::<f32>("b").unwrap_or(0.0),
+				args.raw_get::<f32>("a").unwrap_or(0.0)
+			)
+		);
+		Ok(())
+	}).unwrap());
+
+	// let _ = t.raw_set("custom",
+	// script.create_function(|_, _: ()|
+	// {
+	// 	Window::getCamera().genericVAO();
+	// 	unsafe { gl::DrawArrays(gl::QUADS, 0, 4); }
+	// 	Ok(())
+	// }).unwrap());
+
+	let _ = script.globals().raw_set("shapes3D", t);
 }
 
 pub fn shaders(script: &Lua)
@@ -1385,7 +1466,8 @@ pub fn mesh(script: &Lua)
 	script.create_function(|s, p: String|
 	{
 		let mesh = getMesh(s.globals().raw_get("ScriptID").unwrap());
-		mesh.load(p);
+		print!("LOAD MESH {p}");
+		// mesh.load(p);
 		Ok(())
 	}).unwrap());
 

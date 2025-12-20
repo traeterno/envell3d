@@ -28,7 +28,7 @@ impl Entity
 		bind::network(&ent.script);
 		bind::world(&ent.script);
 		bind::window(&ent.script);
-		bind::shapes(&ent.script);
+		bind::shapes3D(&ent.script);
 		bind::shaders(&ent.script);
 		bind::mesh(&ent.script);
 
