@@ -8,7 +8,7 @@ pub struct Profiler
 
 impl Profiler
 {
-	pub fn new() -> Self
+	pub fn init() -> Self
 	{
 		Self { timer: std::time::Instant::now(), values: HashMap::new() }
 	}

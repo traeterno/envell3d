@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::ae3d::Window::Window;
+
 #[derive(Default, Debug)]
 pub struct BufferView
 {
@@ -48,7 +50,7 @@ pub struct Skin
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct Sampler
+pub struct AnimationSampler
 {
 	pub input: usize,
 	pub interpolation: String,
@@ -56,7 +58,7 @@ pub struct Sampler
 }
 
 #[derive(Default, Debug, Clone)]
-pub struct Channel
+pub struct AnimationChannel
 {
 	pub sampler: usize,
 	pub node: usize,
@@ -67,8 +69,8 @@ pub struct Channel
 pub struct Animation
 {
 	pub name: String,
-	pub samplers: Vec<Sampler>,
-	pub channels: Vec<Channel>
+	pub samplers: Vec<AnimationSampler>,
+	pub channels: Vec<AnimationChannel>
 }
 
 #[derive(Default, Debug)]
@@ -78,7 +80,36 @@ pub struct Scene
 	pub nodesID: Vec<usize>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
+pub struct TextureSampler
+{
+	pub minFilter: i32,
+	pub magFilter: i32
+}
+
+#[derive(Default, Debug)]
+pub struct Image
+{
+	pub mimeType: String,
+	pub name: String,
+	pub uri: String
+}
+
+#[derive(Default, Debug)]
+pub struct Texture
+{
+	pub sampler: usize,
+	pub source: usize
+}
+
+#[derive(Default, Debug)]
+pub struct Material
+{
+	pub name: String,
+	pub texture: usize
+}
+
+#[derive(Default, Debug)]
 pub struct GLTF
 {
 	pub buffers: Vec<Vec<u8>>,
@@ -89,7 +120,11 @@ pub struct GLTF
 	pub nodes: Vec<Node>,
 	pub meshes: Vec<Mesh>,
 	pub skins: Vec<Skin>,
-	pub animations: Vec<Animation>
+	pub animations: Vec<Animation>,
+	pub samplers: Vec<TextureSampler>,
+	pub images: Vec<Image>,
+	pub textures: Vec<Texture>,
+	pub materials: Vec<Material>
 }
 
 impl GLTF
@@ -124,7 +159,7 @@ impl GLTF
 					}
 				}
 			}
-			if section.0 == "bufferViews"
+			else if section.0 == "bufferViews"
 			{
 				for view in section.1.members()
 				{
@@ -139,7 +174,7 @@ impl GLTF
 					gltf.bufferViews.push(bv);
 				}
 			}
-			if section.0 == "accessors"
+			else if section.0 == "accessors"
 			{
 				for a in section.1.members()
 				{
@@ -154,8 +189,8 @@ impl GLTF
 					gltf.accessors.push(acc);
 				}
 			}
-			if section.0 == "scene" { gltf.scene = section.1.as_usize().unwrap(); }
-			if section.0 == "scenes"
+			else if section.0 == "scene" { gltf.scene = section.1.as_usize().unwrap(); }
+			else if section.0 == "scenes"
 			{
 				for scene in section.1.members()
 				{
@@ -174,7 +209,7 @@ impl GLTF
 					gltf.scenes.push(s);
 				}
 			}
-			if section.0 == "nodes"
+			else if section.0 == "nodes"
 			{
 				for node in section.1.members()
 				{
@@ -213,7 +248,7 @@ impl GLTF
 					gltf.nodes.push(n);
 				}
 			}
-			if section.0 == "meshes"
+			else if section.0 == "meshes"
 			{
 				for mesh in section.1.members()
 				{
@@ -228,13 +263,6 @@ impl GLTF
 								let mut p = Primitive::new();
 								for var in primitive.entries()
 								{
-									if var.0 == "indices"
-									{
-										p.insert(
-											"indices".to_string(),
-											var.1.as_usize().unwrap()
-										);
-									}
 									if var.0 == "attributes"
 									{
 										for attr in var.1.entries()
@@ -245,6 +273,13 @@ impl GLTF
 											);
 										}
 									}
+									else
+									{
+										p.insert(
+											var.0.to_string(),
+											var.1.as_usize().unwrap()
+										);
+									}
 								}
 								m.primitives.push(p);
 							}
@@ -253,7 +288,7 @@ impl GLTF
 					gltf.meshes.push(m);
 				}
 			}
-			if section.0 == "skins"
+			else if section.0 == "skins"
 			{
 				for skin in section.1.members()
 				{
@@ -279,7 +314,7 @@ impl GLTF
 					gltf.skins.push(s);
 				}
 			}
-			if section.0 == "animations"
+			else if section.0 == "animations"
 			{
 				for anim in section.1.members()
 				{
@@ -294,7 +329,7 @@ impl GLTF
 						{
 							for channel in var.1.members()
 							{
-								let mut c = Channel::default();
+								let mut c = AnimationChannel::default();
 								for v in channel.entries()
 								{
 									if v.0 == "sampler"
@@ -323,7 +358,7 @@ impl GLTF
 						{
 							for sampler in var.1.members()
 							{
-								let mut s = Sampler::default();
+								let mut s = AnimationSampler::default();
 								for var in sampler.entries()
 								{
 									if var.0 == "input"
@@ -346,18 +381,118 @@ impl GLTF
 					gltf.animations.push(a);
 				}
 			}
+			else if section.0 == "samplers"
+			{
+				for sampler in section.1.members()
+				{
+					let mut s = TextureSampler::default();
+					for var in sampler.entries()
+					{
+						if var.0 == "minFilter"
+						{
+							s.minFilter = var.1.as_i32().unwrap();
+						}
+						if var.0 == "magFilter"
+						{
+							s.magFilter = var.1.as_i32().unwrap();
+						}
+					}
+					gltf.samplers.push(s);
+				}
+			}
+			else if section.0 == "images"
+			{
+				for image in section.1.members()
+				{
+					let mut i = Image::default();
+					for var in image.entries()
+					{
+						if var.0 == "mimeType"
+						{
+							i.mimeType = var.1.as_str().unwrap().to_string();
+						}
+						if var.0 == "name"
+						{
+							i.name = var.1.as_str().unwrap().to_string();
+						}
+						if var.0 == "uri"
+						{
+							let mut p: Vec<&str> = path.split("/").collect();
+							p.remove(p.len() - 1);
+							p.push(var.1.as_str().unwrap());
+							i.uri = p.join("/");
+						}
+					}
+					gltf.images.push(i);
+				}
+			}
+			else if section.0 == "textures"
+			{
+				for texture in section.1.members()
+				{
+					let mut t = Texture::default();
+					for var in texture.entries()
+					{
+						if var.0 == "sampler"
+						{
+							t.sampler = var.1.as_usize().unwrap();
+						}
+						if var.0 == "source"
+						{
+							t.source = var.1.as_usize().unwrap();
+						}
+					}
+					gltf.textures.push(t);
+				}
+			}
+			else if section.0 == "materials"
+			{
+				for material in section.1.members()
+				{
+					let mut m = Material::default();
+					for var in material.entries()
+					{
+						if var.0 == "name"
+						{
+							m.name = var.1.as_str().unwrap().to_string();
+						}
+						if var.0 == "pbrMetallicRoughness"
+						{
+							for v in var.1.entries()
+							{
+								if v.0 == "baseColorTexture"
+								{
+									for x in v.1.entries()
+									{
+										if x.0 == "index"
+										{
+											m.texture = x.1.as_usize().unwrap();
+										}
+									}
+								}
+							}
+						}
+					}
+					gltf.materials.push(m);
+				}
+			}
+			else if section.0 == "asset" {}
+			else { println!("{}", section.0); }
 		}
 		
 		gltf
 	}
 
-	pub fn mesh(&self, id: usize) -> (Vec<f32>, Vec<f32>, Vec<u16>, Vec<f32>)
+	pub fn mesh(&self, id: usize) ->
+		(Vec<f32>, Vec<f32>, Vec<u16>, Vec<f32>, Vec<f32>, u32)
 	{
 		let info = &self.meshes[id];
 		let mut verticesID = usize::MAX;
 		let mut normalsID = usize::MAX;
 		let mut elementsID = usize::MAX;
 		let mut jointsID = usize::MAX;
+		let mut uvsID = usize::MAX;
+		let mut materialID = usize::MAX;
 		// let mut weightsID = 0;
 		for (key, &value) in &info.primitives[0]
 		{
@@ -365,20 +500,23 @@ impl GLTF
 			if key == "NORMAL" { normalsID = value; }
 			if key == "indices" { elementsID = value; }
 			if key == "JOINTS_0" { jointsID = value; }
-			// if key == "WEIGHTS_0" { weightsID = value; }
+			if key == "TEXCOORD_0" { uvsID = value; }
+			if key == "material" { materialID = value; }
 		}
 
 		let mut vertices: Vec<f32> = vec![];
 		let mut normals: Vec<f32> = vec![];
 		let mut elements: Vec<u16> = vec![];
 		let mut joints: Vec<f32> = vec![];
+		let mut uvs: Vec<f32> = vec![];
+		let mut material = 0u32;
 
 		if verticesID != usize::MAX
 		{
 			let va = &self.accessors[verticesID];
 			let vbv = &self.bufferViews[va.bufferView];
 			let vb = &self.buffers[vbv.buffer];
-			for i in 0..(vbv.byteLength / 4)
+			for i in 0..(va.count * 3)
 			{
 				let v = vbv.byteOffset + i * 4;
 				vertices.push(f32::from_le_bytes([vb[v], vb[v + 1], vb[v + 2], vb[v + 3]]));
@@ -390,7 +528,7 @@ impl GLTF
 			let na = &self.accessors[normalsID];
 			let nbv = &self.bufferViews[na.bufferView];
 			let nb = &self.buffers[nbv.buffer];
-			for i in 0..(nbv.byteLength / 4)
+			for i in 0..(na.count * 3)
 			{
 				let n = nbv.byteOffset + i * 4;
 				normals.push(f32::from_le_bytes([nb[n], nb[n + 1], nb[n + 2], nb[n + 3]]));
@@ -402,7 +540,7 @@ impl GLTF
 			let ea = &self.accessors[elementsID];
 			let ebv = &self.bufferViews[ea.bufferView];
 			let eb = &self.buffers[ebv.buffer];
-			for i in 0..(ebv.byteLength / 2)
+			for i in 0..ea.count
 			{
 				let e = ebv.byteOffset + i * 2;
 				elements.push(u16::from_le_bytes([eb[e], eb[e + 1]]));
@@ -414,13 +552,44 @@ impl GLTF
 			let ja = &self.accessors[jointsID];
 			let jbv = &self.bufferViews[ja.bufferView];
 			let jb = &self.buffers[jbv.buffer];
-			for i in 0..(jbv.byteLength / 4)
+			for i in 0..ja.count
 			{
 				let j = jbv.byteOffset + i * 4;
 				joints.push(jb[j] as f32);
 			}
 		}
+
+		if uvsID != usize::MAX
+		{
+			let uva = &self.accessors[uvsID];
+			let uvbv = &self.bufferViews[uva.bufferView];
+			let uvb = &self.buffers[uvbv.buffer];
+			for i in 0..(uva.count * 2)
+			{
+				let uv = uvbv.byteOffset + i * 4;
+				uvs.push(f32::from_le_bytes([uvb[uv], uvb[uv + 1], uvb[uv + 2], uvb[uv + 3]]));
+			}
+		}
+
+		if materialID != usize::MAX
+		{
+			let (name, id) = self.material(materialID);
+			println!("{name}: {id}");
+			material = id;
+		}
 		
-		(vertices, normals, elements, joints)
+		(vertices, normals, elements, joints, uvs, material)
+	}
+
+	pub fn material(&self, id: usize) -> (String, u32)
+	{
+		let m = &self.materials[id];
+		let t = &self.textures[m.texture];
+		let s = &self.samplers[t.sampler];
+		let i = &self.images[t.source];
+		(m.name.clone(), Window::getTexture(
+			i.uri.clone(),
+			s.minFilter, s.magFilter
+		))
 	}
 }

@@ -19,6 +19,7 @@ cpal = "0.16"
 json = "0.12.4"
 base64 = "0.22.1"
 sha1_smol = "1.0.1"
+gilrs-core = "0.6.6"
 
 [dependencies.glfw]
 version = "0.59.0"
@@ -28,3 +29,8 @@ features = [ "raw-window-handle-v0-5" ]
 [dependencies.mlua]
 version = "0.10.5"
 features = ["lua54", "vendored"]
+
+[dependencies.mio]
+version = "1.1.1"
+default-features = false
+features = [ "os-poll", "net" ]

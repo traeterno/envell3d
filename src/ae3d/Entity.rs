@@ -1,12 +1,13 @@
 use mlua::Lua;
 
-use crate::ae3d::{bind, Camera::{Camera, Drawable}, Mesh::Mesh};
+use crate::ae3d::{bind, Camera::{Camera, Drawable}, Mesh::Mesh, Skeleton::Skeleton};
 
 pub struct Entity
 {
 	script: Lua,
 	id: String,
-	mesh: Mesh
+	mesh: Mesh,
+	sk: Skeleton
 }
 
 impl Entity
@@ -17,7 +18,8 @@ impl Entity
 		{
 			script: Lua::new(),
 			id: String::new(),
-			mesh: Mesh::new()
+			mesh: Mesh::new(),
+			sk: Skeleton::default()
 		}
 	}
 
@@ -31,6 +33,7 @@ impl Entity
 		bind::shapes3D(&ent.script);
 		bind::shaders(&ent.script);
 		bind::mesh(&ent.script);
+		bind::skeleton(&ent.script);
 
 		let _ = ent.script.load(
 			std::fs::read_to_string(
@@ -83,6 +86,11 @@ impl Entity
 	pub fn getMesh(&mut self) -> &mut Mesh
 	{
 		&mut self.mesh
+	}
+
+	pub fn getSkeleton(&mut self) -> &mut Skeleton
+	{
+		&mut self.sk
 	}
 }
 

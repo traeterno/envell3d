@@ -1,10 +1,7 @@
-use std::{io::Write, net::{TcpStream, UdpSocket}};
-
 use mlua::{Lua, Table};
 
-use crate::{ae3d::{Mesh::Mesh, Transformable::Transformable2D}, server::{State::Account, Transmission::ClientMessage}};
+use crate::ae3d::{glTF::GLTF, Mesh::Mesh, Skeleton::Skeleton, Transformable::Transformable2D};
 use crate::ae3d::{Entity::Entity, Programmable::Variable, World::World};
-use crate::ae3d::Network::{Network, PlayerState};
 
 use super::{Sprite::Sprite, Text::Text, Window::Window};
 
@@ -41,6 +38,17 @@ fn getMesh(id: String) -> &'static mut Mesh
 	}
 }
 
+fn getSkeleton(id: String) -> &'static mut Skeleton
+{
+	let mut id = id.split("_");
+
+	match id.nth(0).unwrap()
+	{
+		"ent" => Window::getWorld().getEntity(id.nth(0).unwrap().to_string()).getSkeleton(),
+		x => panic!("Sprite Lua: {x} not defined")
+	}
+}
+
 fn getText(id: String) -> &'static mut Text
 {
 	let mut id = id.split("_");
@@ -69,7 +77,8 @@ pub fn execFunc(script: &Lua, func: &str)
 			Ok(_) => {}
 			Err(x) =>
 			{
-				println!("{}: '{func}' error\n{x}",
+				println!("Failed to call '{func}' function:\n{x}");
+				println!("Script: {}\n",
 					script.globals().raw_get::<String>("ScriptID").unwrap()
 				);
 				let _ = script.globals().raw_remove(func);
@@ -446,423 +455,34 @@ pub fn network(s: &Lua)
 {
 	let t = s.create_table().unwrap();
 
-	let _ = t.raw_set("id",
-	s.create_function(|_, _: ()|
-	{
-		Ok(Window::getNetwork().id)
-	}).unwrap());
-
 	let _ = t.raw_set("connect",
-	s.create_function(|_, addr: String|
+	s.create_function(|_, ip: String|
 	{
-		std::thread::spawn(move ||
-		{
-			let net = Window::getNetwork();
-	
-			let tcp = TcpStream::connect_timeout(
-				&addr.parse().unwrap(),
-				std::time::Duration::from_secs(5)
-			);
-			if tcp.is_err()
-			{
-				println!("TCP failed: {}", tcp.unwrap_err());
-				return;
-			}
-			let tcp = tcp.unwrap();
-			let _ = tcp.set_nodelay(true);
-	
-			let udp = UdpSocket::bind("0.0.0.0:0");
-			if udp.is_err()
-			{
-				println!("UDP failed: {}", udp.unwrap_err());
-				return;
-			}
-			let udp = udp.unwrap();
-			let _ = udp.set_nonblocking(true);
-	
-			net.tcp = Some(tcp);
-			net.udp = Some(udp);
-			net.avatars.clear();
-			for i in 1..=5 { net.avatars.insert(i, Account::default()); }
-			net.state.resize(5, PlayerState::default());
-			std::thread::spawn(Network::tcpThread);
-		});
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("isConnected",
-	s.create_function(|_, _: ()|
-	{
-		Ok(Window::getNetwork().tcp.is_some())
+		Ok(Window::getNetwork().connect(ip))
 	}).unwrap());
 
 	let _ = t.raw_set("disconnect",
 	s.create_function(|_, _: ()|
 	{
-		let net = Window::getNetwork();
-		net.id = 0;
-		net.tcp = None;
-		net.udp = None;
-		net.avatars.clear();
-		net.state.clear();
+		Window::getNetwork().reset();
 		Ok(())
 	}).unwrap());
 
-	let _ = t.raw_set("login",
-	s.create_function(|_, data: (u8, String)|
+	let _ = t.raw_set("send",
+	s.create_function(|_, data: mlua::Table|
 	{
-		let net = Window::getNetwork();
-		net.id = data.0;
-		net.avatars.insert(data.0, Account
+		let mut buf = vec![];
+		for x in data.pairs::<u8, mlua::Value>()
 		{
-			name: data.1,
-			..Default::default()
-		});
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("setState",
-	s.create_function(|_, x: (f32, f32, f32, f32, Table)|
-	{
-		Window::getNetwork().setState(PlayerState
-		{
-			pos: (x.0, x.1),
-			vel: (x.2, x.3),
-			moveX: x.4.raw_get("MoveX").unwrap(),
-			jump: x.4.raw_get("Jump").unwrap(),
-			attack: x.4.raw_get("Attack").unwrap(),
-			protect: x.4.raw_get("Protect").unwrap(),
-			updated: true
-		});
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("getState",
-	s.create_function(|_, id: u8|
-	{
-		if id == 0
-		{
-			return Ok((
-				0.0, 0.0, 0.0, 0.0,
-				0, false, false, false
-			));
-		}
-
-		let net = Window::getNetwork();
-		let s = &mut net.state[(id - 1) as usize];
-		s.updated = false;
-		Ok((
-			s.pos.0, s.pos.1, s.vel.0, s.vel.1,
-			s.moveX, s.jump, s.attack, s.protect
-		))
-	}).unwrap());
-
-	let _ = t.raw_set("hasMessage",
-	s.create_function(|_, id: u8|
-	{
-		for msg in &Window::getNetwork().tcpHistory
-		{
-			match msg
+			if let Ok((_, v)) = x
 			{
-				ClientMessage::Login(..) => if id == 1 { return Ok(true) }
-				ClientMessage::Disconnected(..) => if id == 2 { return Ok(true) }
-				ClientMessage::Chat(..) => if id == 3 { return Ok(true) }
-				ClientMessage::GameInfo(..) => if id == 4 { return Ok(true) }
-				ClientMessage::PlayerInfo(..) => if id == 5 { return Ok(true) }
+				if v.is_number()
+				{
+					buf.append(&mut v.as_f32().unwrap().to_be_bytes().to_vec());
+				}
 			}
 		}
-		Ok(false)
-	}).unwrap());
-
-	let _ = t.raw_set("getMessage",
-	s.create_function(|s, msg: u8|
-	{
-		let t = s.create_table().unwrap();
-		let net = Window::getNetwork();
-
-		for i in 0..net.tcpHistory.len()
-		{
-			let found: bool;
-			match &net.tcpHistory[i]
-			{
-				ClientMessage::Login(id, name) =>
-				{
-					if msg != 1 { continue; }
-					let _ = t.raw_set("id", *id);
-					let _ = t.raw_set("name", name.clone());
-					found = true;
-				}
-				ClientMessage::Disconnected(id) =>
-				{
-					if msg != 2 { continue; }
-					let _ = t.raw_set("id", *id);
-					found = true;
-				}
-				ClientMessage::Chat(message) =>
-				{
-					if msg != 3 { continue; }
-					let _ = t.raw_set("msg", message.clone());
-					found = true;
-				}
-				ClientMessage::GameInfo(kind, info) =>
-				{
-					if msg != 4 { continue; }
-					let _ = t.raw_set("kind", *kind);
-					match kind
-					{
-						0 =>
-						{
-							let _ = t.raw_set("tickRate", info[0]);
-							let _ = t.raw_set("maxItemCellSize", info[1]);
-							let _ = t.raw_set(
-								"udp",
-								u16::from_be_bytes([info[2], info[3]])
-							);
-							let _ = t.raw_set("checkpoint",
-								String::from_utf8_lossy(
-									&info[4..info.len()]
-								).to_owned()
-							);
-						}
-						1 =>
-						{
-							let _ = t.raw_set("ready", info[0]);
-						}
-						2 => {}
-						x =>
-						{
-							println!("Unknown GameInfo: #{x}");
-						}
-					}
-					found = true;
-				}
-				ClientMessage::PlayerInfo(id, info, raw) =>
-				{
-					if msg != 5 { continue; }
-					let _ = t.raw_set("id", *id);
-					let _ = t.raw_set("kind", *info);
-					match *info
-					{
-						0 => t.raw_set(
-							"name", String::from_utf8_lossy(&raw).to_string()
-						).unwrap(),
-						1 => t.raw_set(
-							"class", String::from_utf8_lossy(&raw).to_string()
-						).unwrap(),
-						2 =>
-						{
-							let _ = t.raw_set("clrR", raw[0]);
-							let _ = t.raw_set("clrG", raw[1]);
-							let _ = t.raw_set("clrB", raw[2]);
-						}
-						3 => t.raw_set(
-							"hp", u16::from_be_bytes([raw[0], raw[1]])
-						).unwrap(),
-						4 => t.raw_set(
-							"inventory", String::from_utf8_lossy(&raw).to_string()
-						).unwrap(),
-						5 => t.raw_set(
-							"usedItem", String::from_utf8_lossy(&raw).to_string()
-						).unwrap(),
-						x => println!("Invalid PlayerInfo: {x}")
-					}
-					found = true;
-				}
-			}
-			if found { net.tcpHistory.swap_remove(i); break; }
-		}
-		
-		Ok(t)
-	}).unwrap());
-
-	let _ = t.raw_set("sendMessage",
-	s.create_function(|_, x: (u8, Table)|
-	{
-		let tcp = Window::getNetwork().tcp.as_mut().unwrap();
-		if let Err(x) = tcp.write(&match x.0
-		{
-			1 =>
-			{
-				let msg: String = x.1.get("msg").unwrap();
-				[&[1u8], msg.as_bytes(), &[0u8]].concat()
-			}
-			2 =>
-			{
-				vec![2u8]
-			}
-			3 =>
-			{
-				vec![
-					3u8,
-					x.1.get("kind").unwrap()
-				]
-			}
-			4 =>
-			{
-				vec![
-					4u8,
-					x.1.get("id").unwrap(),
-					x.1.get("kind").unwrap()
-				]
-			}
-			5 =>
-			{
-				if let Some(name) = x.1
-					.raw_get::<mlua::Value>("name").unwrap().as_string_lossy()
-				{
-					[
-						&[5u8], &[0u8],
-						name.as_bytes(), &[0u8]
-					].concat()
-				}
-				else if let Some(class) = x.1
-					.raw_get::<mlua::Value>("class").unwrap().as_string_lossy()
-				{
-					[
-						&[5u8], &[1u8],
-						class.as_bytes(), &[0u8]
-					].concat()
-				}
-				else if let Some(color) = x.1
-					.raw_get::<mlua::Value>("color").unwrap().as_table()
-				{
-					vec![
-						5u8, 2u8,
-						color.raw_get("r").unwrap(),
-						color.raw_get("g").unwrap(),
-						color.raw_get("b").unwrap(),
-						0u8
-					]
-				}
-				else if let Some(hp) = x.1
-					.raw_get::<mlua::Value>("hp").unwrap().as_u32()
-				{
-					[
-						&[5u8], &[3u8],
-						&(hp as u16).to_be_bytes() as &[u8],
-						&[0u8]
-					].concat()
-				}
-				else if let Some(item) = x.1
-					.raw_get::<mlua::Value>("usedSlot").unwrap().as_u32()
-				{
-					vec![
-						5u8, 5u8,
-						item as u8, 0u8
-					]
-				}
-				else { vec![0u8] }
-			}
-			6 =>
-			{
-				if let Some(start) = x.1
-					.raw_get::<mlua::Value>("start").unwrap().as_boolean()
-				{
-					vec![
-						6u8, 0u8,
-						start as u8, 0u8
-					]
-				}
-				else if let Some(save) = x.1
-					.raw_get::<mlua::Value>("save").unwrap().as_string_lossy()
-				{
-					[
-						&[6u8], &[1u8],
-						save.as_bytes(),
-						&[0u8]
-					].concat()
-				}
-				else { vec![] }
-			}
-			x =>
-			{
-				println!("Unknown ServerMessage: {x}");
-				vec![]
-			}
-		}) { println!("Sending error: {x:?}"); }
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("serverIP",
-	s.create_function(|_, _: ()|
-	{
-		Ok(Window::getNetwork().tcp.as_mut().unwrap().peer_addr().unwrap().to_string())
-	}).unwrap());
-	
-	let _ = t.raw_set("searchServer",
-	s.create_function(|_, _: ()|
-	{
-		let s = UdpSocket::bind("0.0.0.0:0").unwrap();
-		let _ = s.set_broadcast(true);
-		let _ = s.send_to(&[], "255.255.255.255:26225");
-		let _ = s.set_nonblocking(true);
-		Window::getNetwork().udp = Some(s);
-		Ok(())
-	}).unwrap());
-	
-	let _ = t.raw_set("discoveredServer",
-	s.create_function(|_, _: ()|
-	{
-		if let Some(s) = &mut Window::getNetwork().udp
-		{
-			let mut buffer = [0u8; 2];
-			if let Ok((s, addr)) = s.recv_from(&mut buffer)
-			{
-				if s != 2
-				{
-					println!("Invalid response from server {addr}.");
-					return Ok(String::new());
-				}
-				let tcp = u16::from_be_bytes([buffer[0], buffer[1]]);
-				println!("{buffer:?}");
-				Window::getNetwork().udp = None;
-				return Ok(addr.ip().to_string() + ":" + &tcp.to_string());
-			}
-		}
-		Ok(String::new())
-	}).unwrap());
-
-	let _ = t.raw_set("stateReady",
-	s.create_function(|_, id: u8|
-	{
-		Ok(Window::getNetwork().state[(id - 1) as usize].updated)
-	}).unwrap());
-
-	let _ = t.raw_set("setup",
-	s.create_function(|_, x: (u16, u8, Table)|
-	{
-		Window::getNetwork().setup(x.0, x.1, x.2);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("getPlayer",
-	s.create_function(|s, id: u8|
-	{
-		let p = s.create_table().unwrap();
-		let a = Window::getNetwork().avatars.get(&id).unwrap();
-		let _ = p.raw_set("name", a.name.clone());
-		let _ = p.raw_set("class", a.class.clone());
-		let _ = p.raw_set("clrR", a.color.0);
-		let _ = p.raw_set("clrG", a.color.1);
-		let _ = p.raw_set("clrB", a.color.2);
-		Ok(p)
-	}).unwrap());
-
-	let _ = t.raw_set("setPlayerInfo",
-	s.create_function(|_, x: (u8, mlua::Table)|
-	{
-		let a = Window::getNetwork().avatars.get_mut(&x.0).unwrap();
-		for res in x.1.pairs::<String, mlua::Value>()
-		{
-			if let Ok((k, p)) = res
-			{
-				if k == "name" { a.name = p.as_string_lossy().unwrap(); }
-				if k == "class" { a.class = p.as_string_lossy().unwrap(); }
-				if k == "clrR" { a.color.0 = p.as_u32().unwrap() as u8; }
-				if k == "clrG" { a.color.1 = p.as_u32().unwrap() as u8; }
-				if k == "clrB" { a.color.2 = p.as_u32().unwrap() as u8; }
-			}
-		}
+		Window::getNetwork().send(buf);
 		Ok(())
 	}).unwrap());
 
@@ -956,6 +576,13 @@ pub fn window(script: &Lua)
 	script.create_function(|_, x: (f32, f32)|
 	{
 		Window::setMousePos(glam::vec2(x.0, x.1));
+		Ok(())
+	}).unwrap());
+
+	let _ = table.raw_set("showCursor",
+	script.create_function(|_, x: bool|
+	{
+		Window::showCursor(x);
 		Ok(())
 	}).unwrap());
 	
@@ -1102,6 +729,22 @@ pub fn window(script: &Lua)
 		Ok(Window::isFocused())
 	}).unwrap());
 
+	let _ = table.raw_set("isMaximized",
+	script.create_function(|_, _: ()|
+	{
+		Ok(Window::isMaximized())
+	}).unwrap());
+
+	let _ = table.raw_set("clearColor",
+	script.create_function(|_, x: (f32, f32, f32)|
+	{
+		unsafe
+		{
+			gl::ClearColor(x.0, x.1, x.2, 1.0);
+		}
+		Ok(())
+	}).unwrap());
+
 	let _ = script.globals().raw_set("window", table);
 }
 
@@ -1125,7 +768,7 @@ pub fn world(script: &Lua)
 	let _ = t.raw_set("reset",
 	script.create_function(|_, _: ()|
 	{
-		*Window::getWorld() = World::new();
+		*Window::getWorld() = World::init();
 		Ok(())
 	}).unwrap());
 
@@ -1263,7 +906,7 @@ pub fn world(script: &Lua)
 	let _ = t.raw_set("reset",
 	script.create_function(|_, _: ()|
 	{
-		*Window::getWorld() = World::new();
+		*Window::getWorld() = World::init();
 		Ok(())
 	}).unwrap());
 	
@@ -1358,10 +1001,10 @@ pub fn shapes3D(script: &Lua)
 				args.raw_get::<f32>("z2").unwrap_or(0.0)
 			),
 			glam::vec4(
-				args.raw_get::<f32>("r").unwrap_or(0.0),
-				args.raw_get::<f32>("g").unwrap_or(0.0),
-				args.raw_get::<f32>("b").unwrap_or(0.0),
-				args.raw_get::<f32>("a").unwrap_or(0.0)
+				args.raw_get::<f32>("r").unwrap_or(0.0) / 255.0,
+				args.raw_get::<f32>("g").unwrap_or(0.0) / 255.0,
+				args.raw_get::<f32>("b").unwrap_or(0.0) / 255.0,
+				args.raw_get::<f32>("a").unwrap_or(0.0) / 255.0
 			)
 		);
 		Ok(())
@@ -1462,22 +1105,77 @@ pub fn mesh(script: &Lua)
 		Ok(())
 	}).unwrap());
 
-	let _ = t.set("load",
-	script.create_function(|s, p: String|
+	let _ = t.set("setRotation",
+	script.create_function(|s, angle: (f32, f32, f32)|
 	{
 		let mesh = getMesh(s.globals().raw_get("ScriptID").unwrap());
-		print!("LOAD MESH {p}");
-		// mesh.load(p);
+		mesh.getTransformable().setRotation(glam::vec3(angle.0, angle.1, angle.2));
+		Ok(())
+	}).unwrap());
+
+	let _ = t.set("load",
+	script.create_function(|s, p: (String, usize)|
+	{
+		let mesh = getMesh(s.globals().raw_get("ScriptID").unwrap());
+		let gltf = GLTF::load(p.0);
+		*mesh = Mesh::fromGLTF(&gltf, p.1);
 		Ok(())
 	}).unwrap());
 
 	let _ = t.set("draw",
 	script.create_function(|s, _: ()|
 	{
-		let mesh = getMesh(s.globals().raw_get("ScriptID").unwrap());
-		Window::getCamera().draw(mesh);
+		Window::getCamera().draw(
+			getMesh(s.globals().raw_get("ScriptID").unwrap())
+		);
 		Ok(())
 	}).unwrap());
 	
     let _ = script.globals().set("mesh", t);
+}
+
+pub fn skeleton(script: &Lua)
+{
+	let t = script.create_table().unwrap();
+
+	let _ = t.set("setAnimation",
+	script.create_function(|s, anim: String|
+	{
+		let sk = getSkeleton(
+			s.globals().raw_get("ScriptID").unwrap()
+		);
+		sk.setAnimation(anim);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.set("load",
+	script.create_function(|s, p: (String, usize)|
+	{
+		let sk = getSkeleton(
+			s.globals().raw_get("ScriptID").unwrap()
+		);
+		let gltf = GLTF::load(p.0);
+		*sk = Skeleton::fromGLTF(&gltf, p.1);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.set("update",
+	script.create_function(|s, _: ()|
+	{
+		getSkeleton(s.globals().raw_get("ScriptID").unwrap()).update(
+			Window::getCamera()
+		);
+		Ok(())
+	}).unwrap());
+
+	let _ = t.set("draw",
+	script.create_function(|s, _: ()|
+	{
+		Window::getCamera().draw(
+			getSkeleton(s.globals().raw_get("ScriptID").unwrap())
+		);
+		Ok(())
+	}).unwrap());
+
+	let _ = script.globals().set("skeleton", t);
 }

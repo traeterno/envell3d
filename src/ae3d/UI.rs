@@ -152,7 +152,7 @@ pub struct UI
 
 impl UI
 {
-	pub fn new() -> Self
+	pub fn init() -> Self
 	{
 		Self
 		{

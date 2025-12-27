@@ -2,7 +2,7 @@ use std::{collections::HashMap};
 
 use glam::Vec4Swizzles;
 
-use crate::ae3d::{glTF::{self, Node, GLTF}, Camera::{Camera, Drawable}, Mesh::Mesh, Window::Window};
+use crate::ae3d::{glTF::{self, Node, GLTF}, Camera::{Camera, Drawable}, Window::Window};
 
 #[derive(Default, Debug)]
 pub struct Bone
@@ -222,13 +222,12 @@ pub struct Skeleton
 	joints: Vec<glam::Mat4>,
 	anims: HashMap<String, Animation>,
 	currentAnim: String,
-	mesh: Mesh,
 	inverseBind: Vec<glam::Mat4>
 }
 
 impl Skeleton
 {
-	pub fn fromGLTF(gltf: &GLTF, mesh: usize, skeleton: usize) -> Self
+	pub fn fromGLTF(gltf: &GLTF, skeleton: usize) -> Self
 	{
 		let info = &gltf.skins[skeleton];
 		
@@ -296,8 +295,6 @@ impl Skeleton
 		{
 			s.joints.push(x.inverse());
 		}
-
-		s.mesh = Mesh::fromGLTF(gltf, mesh);
 		
 		s
 	}
@@ -317,16 +314,9 @@ impl Skeleton
 			}
 		}
 	}
-}
 
-impl Drawable for Skeleton
-{
-	fn draw(&mut self, cam: &mut Camera)
+	pub fn update(&mut self, cam: &mut Camera)
 	{
-		cam.drawLine3D(glam::Vec3::X * 10.0, glam::Vec3::ZERO, glam::Vec4::W);
-		cam.drawLine3D(glam::Vec3::Y * 10.0, glam::Vec3::ZERO, glam::Vec4::W);
-		cam.drawLine3D(glam::Vec3::Z * 10.0, glam::Vec3::ZERO, glam::Vec4::W);
-
 		cam.shaderUse("mesh");
 		let ts =
 			if let Some(a) = self.anims.get_mut(&self.currentAnim) { a.progress() }
@@ -342,7 +332,16 @@ impl Drawable for Skeleton
 		cam.shaderMat4Array("bind", &self.joints);
 		cam.shaderMat4Array("invBind", &self.inverseBind);
 		cam.shaderInt("jc", self.joints.len() as i32);
-		self.mesh.draw(cam);
+	}
+}
+
+impl Drawable for Skeleton
+{
+	fn draw(&mut self, cam: &mut Camera)
+	{
+		cam.drawLine3D(glam::Vec3::X * 10.0, glam::Vec3::ZERO, glam::Vec4::W);
+		cam.drawLine3D(glam::Vec3::Y * 10.0, glam::Vec3::ZERO, glam::Vec4::W);
+		cam.drawLine3D(glam::Vec3::Z * 10.0, glam::Vec3::ZERO, glam::Vec4::W);
 
 		unsafe { gl::Disable(gl::DEPTH_TEST); }
 		self.root.draw(cam);

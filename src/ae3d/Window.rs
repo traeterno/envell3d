@@ -44,14 +44,14 @@ impl Window
 			keyEvent: None,
 			cam: Camera::new(),
 			textures: HashMap::new(),
-			ui: UI::new(),
-			net: Network::new(),
+			ui: UI::init(),
+			net: Network::init(),
 			inputEvent: None,
-			world: World::new(),
+			world: World::init(),
 			server: None,
 			scrollEvent: None,
 			dndEvent: None,
-			profiler: Profiler::new()
+			profiler: Profiler::init()
 		}
 	}
 
@@ -82,6 +82,7 @@ impl Window
 		let mut size = glam::vec2(1280.0, 720.0);
 		let mut vsync = true;
 		let mut fullscreen = false;
+		let mut maximized = false;
 		let mut uiPath = "";
 		let mut iconPath = "";
 
@@ -94,6 +95,7 @@ impl Window
 					if x == "title" { title = y.as_str().unwrap(); }
 					if x == "vsync" { vsync = y.as_bool().unwrap(); }
 					if x == "fullscreen" { fullscreen = y.as_bool().unwrap(); }
+					if x == "maximized" { maximized = y.as_bool().unwrap(); }
 					if x == "size"
 					{
 						let mut s = y.members();
@@ -169,6 +171,8 @@ impl Window
 		window.set_scroll_polling(true);
 		window.set_drag_and_drop_polling(true);
 		window.make_current();
+		
+		if maximized && !fullscreen { window.maximize(); }
 
 		if !iconPath.is_empty()
 		{
@@ -276,7 +280,7 @@ impl Window
 				glfw::WindowEvent::Close =>
 				{
 					window.set_should_close(true);
-					i.net = Network::new();
+					i.net.reset();
 				}
 				glfw::WindowEvent::MouseButton(b, a, m) =>
 				{
@@ -500,7 +504,7 @@ impl Window
 		}
 	}
 
-	pub fn getTexture(path: String) -> u32
+	pub fn getTexture(path: String, minFilter: i32, magFilter: i32) -> u32
 	{
 		let tex = &mut Window::getInstance().textures;
 		if let Some(t) = tex.get(&path) { return *t; }
@@ -518,19 +522,22 @@ impl Window
 					gl::TexImage2D(
 						gl::TEXTURE_2D,
 						0,
-						gl::RGBA as i32,
+						if data.depth == 4 { gl::RGBA }
+						else { gl::RGB } as i32,
 						data.width as i32,
 						data.height as i32,
 						0,
-						gl::RGBA,
+						if data.depth == 4 { gl::RGBA }
+						else { gl::RGB },
 						gl::UNSIGNED_BYTE,
 						data.data.as_ptr() as *const _
 					);
+					gl::GenerateMipmap(gl::TEXTURE_2D);
 					
 					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as i32);
 					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as i32);
-					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32);
-					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32);
+					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, minFilter);
+					gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, magFilter);
 				}
 
 				tex.insert(path, t);
@@ -593,8 +600,22 @@ impl Window
 		Window::getInstance().window.as_mut().unwrap().is_focused()
 	}
 
+	pub fn isMaximized() -> bool
+	{
+		Window::getInstance().window.as_mut().unwrap().is_maximized()
+	}
+
 	pub fn getProfiler() -> &'static mut Profiler
 	{
 		&mut Self::getInstance().profiler
+	}
+
+
+	pub fn showCursor(active: bool)
+	{
+		Window::getInstance().window.as_mut().unwrap().set_cursor_mode(
+			if active { glfw::CursorMode::Normal }
+			else { glfw::CursorMode::Hidden }
+		);
 	}
 }

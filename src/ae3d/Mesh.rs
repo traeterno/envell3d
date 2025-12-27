@@ -7,7 +7,8 @@ pub struct Mesh
 	vao: u32,
 	vbo: u32,
 	ebo: u32,
-	elements: i32
+	elements: i32,
+	texture: u32
 }
 
 impl Mesh
@@ -29,23 +30,30 @@ impl Mesh
 
 			gl::EnableVertexAttribArray(0);
 			gl::EnableVertexAttribArray(1);
+			gl::EnableVertexAttribArray(2);
 
 			gl::VertexAttribPointer(
 				0, 3, gl::FLOAT, gl::FALSE,
-				(7 * size_of::<f32>()) as i32, 0 as _
+				(9 * size_of::<f32>()) as i32, 0 as _
 			);
 
 			gl::VertexAttribPointer(
 				1, 4, gl::FLOAT, gl::FALSE,
-				(7 * size_of::<f32>()) as i32,
+				(9 * size_of::<f32>()) as i32,
 				(3 * size_of::<f32>()) as _
+			);
+
+			gl::VertexAttribPointer(
+				2, 2, gl::FLOAT, gl::FALSE,
+				(9 * size_of::<f32>()) as i32,
+				(7 * size_of::<f32>()) as _
 			);
 		}
 		Self
 		{
 			ts: Transformable3D::new(),
 			vao, vbo, ebo,
-			elements: 0
+			elements: 0, texture: 0
 		}
 	}
 
@@ -53,7 +61,7 @@ impl Mesh
 	{
 		let (
 			vertices, normals, elements,
-			joints
+			joints, uvs, texture
 		) = gltf.mesh(id);
 		
 		let mut buffer: Vec<f32> = vec![];
@@ -72,10 +80,17 @@ impl Mesh
 			}
 			if joints.len() == 0 { buffer.push(-1.0); }
 			else { buffer.push(joints[i]); }
+			if uvs.len() == 0 { buffer.append(&mut vec![0.0; 2]); }
+			else
+			{
+				buffer.push(uvs[i * 2]);
+				buffer.push(uvs[i * 2 + 1]);
+			}
 		}
 
 		let mut m = Mesh::new();
 		m.elements = elements.len() as i32;
+		m.texture = texture;
 
 		unsafe
 		{
@@ -109,8 +124,16 @@ impl Drawable for Mesh
 		cam.shaderUse("mesh");
 		cam.bindVAO(self.vao);
 		cam.shaderMat4("model", self.ts.getMatrix());
+		cam.shaderMat4("normalsMatrix", self.ts.getInvTrans());
+		cam.shaderBool("hasMaterial", self.texture != 0);
 		unsafe
 		{
+			if self.texture != 0
+			{
+				gl::ActiveTexture(gl::TEXTURE0);
+				gl::BindTexture(gl::TEXTURE_2D, self.texture);
+				cam.shaderInt("texture", 0);
+			}
 			gl::DrawElements(
 				gl::TRIANGLES, self.elements,
 				gl::UNSIGNED_SHORT, 0 as *const _

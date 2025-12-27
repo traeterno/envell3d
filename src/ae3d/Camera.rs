@@ -402,6 +402,19 @@ impl Camera
 		}
 	}
 
+	pub fn shaderBool(&self, name: &str, value: bool)
+	{
+		let cn = std::ffi::CString::new(name).unwrap();
+		unsafe
+		{
+			gl::Uniform1i(
+				gl::GetUniformLocation(
+					self.currentShader, cn.as_ptr()
+				), if value { 1 } else { 0 }
+			);
+		}
+	}
+
 	pub fn shaderMat4(&self, name: &str, value: glam::Mat4)
 	{
 		let cn = std::ffi::CString::new(name).unwrap();

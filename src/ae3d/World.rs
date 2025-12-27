@@ -16,7 +16,7 @@ pub struct World
 
 impl World
 {
-	pub fn new() -> Self
+	pub fn init() -> Self
 	{
 		Self
 		{
@@ -55,6 +55,8 @@ impl World
 		bind::window(&self.script);
 		bind::network(&self.script);
 		bind::world(&self.script);
+		bind::shapes3D(&self.script);
+		bind::shaders(&self.script);
 	}
 
 	pub fn update(&mut self)
@@ -124,37 +126,11 @@ impl Drawable for World
 	fn draw(&mut self, cam: &mut Camera)
 	{
 		Window::getProfiler().restart();
+		bind::execFunc(&self.script, "Draw");
 		for (_, ent) in &mut self.ents
 		{
 			ent.draw(cam);
 		}
-		// for layer in 0..self.layers.len()
-		// {
-		// 	let opaque = self.layers[layer].0.len();
-		// 	if opaque > 0
-		// 	{
-		// 		unsafe
-		// 		{
-		// 			gl::Enable(gl::STENCIL_TEST);
-		// 			gl::Clear(gl::STENCIL_BUFFER_BIT);
-		// 			gl::Disable(gl::BLEND);
-		// 		}
-		// 		for i in 1..=opaque
-		// 		{
-		// 			self.getEntity(self.layers[layer].0[opaque - i].clone()).draw(cam);
-		// 		}
-		// 	}
-		// 	let transparent = self.layers[layer].1.len();
-		// 	if transparent > 0
-		// 	{
-		// 		unsafe { gl::Enable(gl::BLEND); gl::Disable(gl::STENCIL_TEST); }
-		// 		for i in 0..transparent
-		// 		{
-		// 			self.getEntity(self.layers[layer].1[i].clone()).draw(cam);
-		// 		}
-		// 	}
-		// }
-		// unsafe { gl::Enable(gl::BLEND); gl::Finish(); }
 		unsafe { gl::Finish(); }
 		Window::getProfiler().save("worldDraw".to_string());
 	}

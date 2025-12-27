@@ -6,6 +6,9 @@
 		"mesh",
 		"world",
 		"text",
-		"shapes3D"
+		"shapes3D",
+		"skeleton",
+		"shaders",
+		"shapes2D"
 	]
 }

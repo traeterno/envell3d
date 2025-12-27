@@ -139,7 +139,10 @@ impl Sprite
 		{
 			if section == "texture"
 			{
-				spr.texture = Window::getTexture(value.as_str().unwrap().to_string());
+				spr.texture = Window::getTexture(
+					value.as_str().unwrap().to_string(),
+					gl::NEAREST as i32, gl::NEAREST as i32
+				);
 				unsafe
 				{
 					gl::BindTexture(gl::TEXTURE_2D, spr.texture);
@@ -183,7 +186,9 @@ impl Sprite
 	pub fn image(path: String) -> Self
 	{
 		let mut spr = Sprite::default();
-		spr.texture = Window::getTexture(path);
+		spr.texture = Window::getTexture(
+			path, gl::NEAREST as i32, gl::NEAREST as i32
+		);
 		let mut w = 0;
 		let mut h = 0;
 		unsafe

@@ -52,7 +52,8 @@ impl Font
 			if section.0 == "texture"
 			{
 				font.texture = Window::getTexture(
-					section.1.as_str().unwrap().to_string()
+					section.1.as_str().unwrap().to_string(),
+					gl::NEAREST as i32, gl::NEAREST as i32
 				);
 				unsafe
 				{

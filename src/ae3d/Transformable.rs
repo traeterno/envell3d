@@ -70,6 +70,7 @@ pub struct Transformable3D
 	position: glam::Vec3,
 	rotation: glam::Quat,
 	model: glam::Mat4,
+	invTrans: glam::Mat4,
 	reloadModel: bool
 }
 
@@ -82,6 +83,7 @@ impl Transformable3D
 			position: glam::Vec3::ZERO,
 			rotation: glam::Quat::IDENTITY,
 			model: glam::Mat4::IDENTITY,
+			invTrans: glam::Mat4::IDENTITY,
 			reloadModel: true
 		}
 	}
@@ -91,6 +93,8 @@ impl Transformable3D
 		self.model =
 			glam::Mat4::from_translation(self.position) *
 			glam::Mat4::from_quat(self.rotation);
+		
+		self.invTrans = self.model.inverse().transpose();
 		// self.model =
 		// 	glam::Mat4::from_translation(glam::vec3(self.position.x, self.position.y, 0.0))
 		// 	.mul_mat4(&glam::Mat4::from_rotation_z(self.rotation.to_radians()))
@@ -105,13 +109,31 @@ impl Transformable3D
 		self.model
 	}
 
-	pub fn setPosition(&mut self, pos: glam::Vec3) { self.position = pos; self.reloadModel = true; }
-	pub fn translate(&mut self, delta: glam::Vec3) { self.position += delta; self.reloadModel = true; }
+	pub fn getInvTrans(&mut self) -> glam::Mat4
+	{
+		if self.reloadModel { self.update(); }
+
+		self.invTrans
+	}
+
+	pub fn setPosition(&mut self, pos: glam::Vec3)
+	{
+		self.position = pos; self.reloadModel = true;
+	}
+	pub fn translate(&mut self, delta: glam::Vec3)
+	{
+		self.position += delta; self.reloadModel = true;
+	}
 	pub fn getPosition(&self) -> glam::Vec3 { self.position }
 
-	pub fn setRotation(&mut self, v: glam::Vec4)
+	pub fn setRotation(&mut self, v: glam::Vec3)
 	{
-		self.rotation = glam::Quat::from_xyzw(v.x, v.y, v.z, v.w);
+		self.rotation = glam::Quat::from_euler(
+			glam::EulerRot::YXZ,
+			v.x.to_radians(),
+			v.y.to_radians(),
+			v.z.to_radians()
+		);
 	}
 
 	pub fn getRotation(&self) -> glam::Quat { self.rotation }
