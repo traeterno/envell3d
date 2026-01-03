@@ -30,10 +30,10 @@ impl Entity
 		bind::network(&ent.script);
 		bind::world(&ent.script);
 		bind::window(&ent.script);
-		bind::shapes3D(&ent.script);
 		bind::shaders(&ent.script);
 		bind::mesh(&ent.script);
 		bind::skeleton(&ent.script);
+		bind::camera(&ent.script);
 
 		let _ = ent.script.load(
 			std::fs::read_to_string(

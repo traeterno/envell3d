@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use super::{Transformable::Transformable3D, Window::Window};
+use crate::ae3d::Transformable::Transformable3D;
+
+use super::Window::Window;
 
 pub trait Drawable
 {
@@ -9,19 +11,15 @@ pub trait Drawable
 
 pub struct Camera
 {
-	ts: Transformable3D,
-	framebuffer: u32,
-	stencil: u32,
-	offscreen: u32,
-	genericVAO: u32, genericVBO: u32,
-	meshVAO: u32, meshVBO: u32,
-	uiProj: glam::Mat4,
-	worldProj: glam::Mat4,
-	useTS: bool,
+	offscreen: (u32, u32, u32),
+	generic: (u32, u32),
 	currentVAO: u32,
 	currentShader: u32,
 	shaders: HashMap<String, u32>,
-	fov: f32
+	fov: f32,
+	proj: glam::Mat4,
+	scaler: i32,
+	ts: Transformable3D
 }
 
 impl Camera
@@ -30,120 +28,70 @@ impl Camera
 	{
 		Self
 		{
-			ts: Transformable3D::new(),
-			framebuffer: 0,
-			stencil: 0,
-			offscreen: 0,
-			genericVAO: 0, genericVBO: 0,
-			meshVAO: 0, meshVBO: 0,
-			uiProj: glam::Mat4::IDENTITY,
-			worldProj: glam::Mat4::IDENTITY,
-			useTS: false,
+			offscreen: (0, 0, 0),
+			generic: (0, 0),
 			currentVAO: 0,
 			currentShader: 0,
 			shaders: HashMap::new(),
-			fov: 90.0
+			fov: 90.0,
+			proj: glam::Mat4::IDENTITY,
+			scaler: 1,
+			ts: Transformable3D::new()
 		}
 	}
 
 	pub fn load(&mut self)
 	{
-		let (w, h) = Window::getSize();
-
 		unsafe
 		{
-			gl::GenFramebuffers(1, &mut self.framebuffer);
-			gl::BindFramebuffer(gl::FRAMEBUFFER, self.framebuffer);
+			gl::GenFramebuffers(1, &mut self.offscreen.0);
+			gl::BindFramebuffer(gl::FRAMEBUFFER, self.offscreen.0);
 
-			gl::GenTextures(1, &mut self.offscreen);
-			gl::BindTexture(gl::TEXTURE_2D, self.offscreen);
-			gl::TexImage2D(
-				gl::TEXTURE_2D, 0, gl::RGB as i32,
-				w, h, 0,
-				gl::RGB, gl::UNSIGNED_BYTE, 0 as _
+			gl::GenTextures(1, &mut self.offscreen.1);
+			gl::BindTexture(gl::TEXTURE_2D, self.offscreen.1);
+			gl::TexParameteri(gl::TEXTURE_2D,
+				gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32
 			);
 			gl::TexParameteri(gl::TEXTURE_2D,
-				gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32
+				gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32
 			);
-			gl::TexParameteri(gl::TEXTURE_2D,
-				gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32
-			);
-
 			gl::FramebufferTexture2D(
 				gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0,
-				gl::TEXTURE_2D, self.offscreen, 0
+				gl::TEXTURE_2D, self.offscreen.1, 0
 			);
 
-			gl::GenTextures(1, &mut self.stencil);
-			gl::BindTexture(gl::TEXTURE_2D, self.stencil);
-			gl::TexImage2D(
-				gl::TEXTURE_2D, 0, gl::DEPTH24_STENCIL8 as i32,
-				w, h, 0,
-				gl::DEPTH_STENCIL, gl::UNSIGNED_INT_24_8, 0 as _
+			gl::GenTextures(1, &mut self.offscreen.2);
+			gl::BindTexture(gl::TEXTURE_2D, self.offscreen.2);
+			gl::TexParameteri(gl::TEXTURE_2D,
+				gl::TEXTURE_MIN_FILTER, gl::NEAREST as i32
 			);
-
+			gl::TexParameteri(gl::TEXTURE_2D,
+				gl::TEXTURE_MAG_FILTER, gl::NEAREST as i32
+			);
 			gl::FramebufferTexture2D(
 				gl::FRAMEBUFFER, gl::DEPTH_STENCIL_ATTACHMENT,
-				gl::TEXTURE_2D, self.stencil, 0
+				gl::TEXTURE_2D, self.offscreen.2, 0
 			);
+
+			gl::GenVertexArrays(1, &mut self.generic.0);
+			gl::GenBuffers(1, &mut self.generic.1);
 			
-			gl::GenVertexArrays(1, &mut self.genericVAO);
-			gl::GenBuffers(1, &mut self.genericVBO);
-
-			gl::BindVertexArray(self.genericVAO);
-			gl::BindBuffer(gl::ARRAY_BUFFER, self.genericVBO);
-
+			gl::BindVertexArray(self.generic.0);
+			gl::BindBuffer(gl::ARRAY_BUFFER, self.generic.1);
 			gl::EnableVertexAttribArray(0);
-
 			gl::VertexAttribPointer(
 				0, 2, gl::FLOAT, gl::FALSE,
-				(2 * size_of::<f32>()) as i32, 0 as _
+				2 * size_of::<f32>() as i32,
+				0 as _
 			);
-
-			gl::BufferData(gl::ARRAY_BUFFER,
-				(8 * size_of::<f32>()) as _,
-					[0.0_f32, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0].as_ptr() as _,
+			gl::BufferData(
+				gl::ARRAY_BUFFER, 8 * size_of::<f32>() as isize,
+				[0.0_f32, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0].as_ptr() as _,
 				gl::STATIC_DRAW
 			);
-			
-			gl::GenVertexArrays(1, &mut self.meshVAO);
-			gl::GenBuffers(1, &mut self.meshVBO);
-
-			gl::BindVertexArray(self.meshVAO);
-			gl::BindBuffer(gl::ARRAY_BUFFER, self.meshVBO);
-
-			gl::EnableVertexAttribArray(0);
-
-			gl::VertexAttribPointer(
-				0, 3, gl::FLOAT, gl::FALSE,
-				(3 * size_of::<f32>()) as i32, 0 as _
-			);
-
-			let mesh: [f32; 72] = [
-				0.0, 0.0, 0.0,	1.0, 0.0, 0.0,	1.0, 1.0, 0.0,	0.0, 1.0, 0.0,
-				0.0, 0.0, 1.0,	1.0, 0.0, 1.0,	1.0, 1.0, 1.0,	0.0, 1.0, 1.0,
-
-				0.0, 0.0, 0.0,	0.0, 0.0, 1.0,	0.0, 1.0, 1.0,	0.0, 1.0, 0.0,
-				1.0, 0.0, 0.0,	1.0, 0.0, 1.0,	1.0, 1.0, 1.0,	1.0, 1.0, 0.0,
-
-				0.0, 0.0, 0.0,	1.0, 0.0, 0.0,	1.0, 0.0, 1.0,	0.0, 0.0, 1.0,
-				0.0, 1.0, 0.0,	1.0, 1.0, 0.0,	1.0, 1.0, 1.0,	0.0, 1.0, 1.0,
-			];
-
-			gl::BufferData(gl::ARRAY_BUFFER,
-				(mesh.len() * size_of::<f32>()) as _,
-					mesh.as_ptr() as _,
-				gl::STATIC_DRAW
-			);
-
-			gl::ClearColor(0.5, 0.5, 0.5, 1.0);
-
-			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
 		}
 
-		self.setSize((w, h));
-		self.setup((w, h), self.fov);
-		self.toggleTransform(true);
+		self.setup();
 	}
 
 	pub fn clear(&mut self)
@@ -151,7 +99,10 @@ impl Camera
 		Window::getProfiler().restart();
 		unsafe
 		{
-			// gl::BindFramebuffer(gl::FRAMEBUFFER, self.framebuffer);
+			let (w, h) = Window::getSize();
+			gl::Viewport(0, 0, w / self.scaler, h / self.scaler);
+			gl::BindFramebuffer(gl::FRAMEBUFFER, self.offscreen.0);
+			gl::Enable(gl::DEPTH_TEST);
 			gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 			gl::Finish();
 		}
@@ -161,75 +112,28 @@ impl Camera
 	pub fn display(&mut self)
 	{
 		Window::getProfiler().restart();
-		// unsafe
-		// {
-		// 	gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
-		// 	self.shaderUse("camera");
-		// 	self.shaderInt("tex", 0);
-		// 	gl::BindTexture(gl::TEXTURE_2D, self.offscreen);
-		// 	gl::BindVertexArray(self.genericVAO);
-		// 	gl::DrawArrays(gl::QUADS, 0, 4);
-		// 	gl::Finish();
-		// }
-		Window::getProfiler().save("render".to_string());
-	}
-
-	pub fn toggleTransform(&mut self, enable: bool)
-	{
-		self.useTS = enable;
-		let proj = if enable { self.worldProj } else { self.uiProj };
-		let view = if enable {self.ts.getMatrix()} else {glam::Mat4::IDENTITY};
-		for (_, &s) in &self.shaders
+		unsafe
 		{
-			unsafe
-			{
-				gl::UseProgram(s);
-			}
-			self.currentShader = s;
-			self.shaderMat4("projection", proj);
-			self.shaderMat4("view", view);
+			let (w, h) = Window::getSize();
+			gl::Viewport(0, 0, w, h);
+			gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+			self.shaderUse("camera");
+			self.shaderInt("tex", 0);
+			gl::BindTexture(gl::TEXTURE_2D, self.offscreen.1);
+			gl::BindVertexArray(self.generic.0);
+			gl::Disable(gl::DEPTH_TEST);
+			gl::DrawArrays(gl::QUADS, 0, 4);
+			gl::Finish();
 		}
-	}
-
-	pub fn setSize(&mut self, s: (i32, i32))
-	{
-		self.setup(s, self.fov);
-		self.uiProj = glam::Mat4::orthographic_rh_gl(
-			0.0, s.0 as f32,
-			s.1 as f32, 0.0,
-			-1.0, 1.0
-		);
-		// unsafe
-		// {
-		// 	gl::BindTexture(gl::TEXTURE_2D, self.offscreen);
-		// 	gl::TexImage2D(
-		// 		gl::TEXTURE_2D, 0, gl::RGB as i32,
-		// 		s.0, s.1, 0, gl::RGB,
-		// 		gl::UNSIGNED_BYTE, 0 as _
-		// 	);
-		// 	gl::BindTexture(gl::TEXTURE_2D, self.stencil);
-		// 	gl::TexImage2D(
-		// 		gl::TEXTURE_2D, 0, gl::DEPTH24_STENCIL8 as i32,
-		// 		s.0, s.1, 0,
-		// 		gl::DEPTH_STENCIL, gl::UNSIGNED_INT_24_8, 0 as _
-		// 	);
-		// }
-
+		Window::getProfiler().save("render".to_string());
 	}
 
 	pub fn draw(&mut self, obj: &mut impl Drawable)
 	{
+		let m = self.ts.getMatrix();
+		self.shaderMat4("worldProj", self.proj);
+		self.shaderMat4("view", m);
 		obj.draw(self);
-	}
-
-	pub fn genericVAO(&mut self)
-	{
-		self.bindVAO(self.genericVAO);
-	}
-
-	pub fn meshVAO(&mut self)
-	{
-		self.bindVAO(self.meshVAO);
 	}
 
 	pub fn bindVAO(&mut self, vao: u32)
@@ -244,66 +148,49 @@ impl Camera
 		&mut self.ts
 	}
 
-	pub fn drawRect2D(&mut self, ts: glam::Mat4, clr: glam::Vec4)
-	{
-		self.shaderUse("shape");
-		self.shaderMat4("model", ts);
-		self.shaderVec4("clr", clr);
-		self.shaderInt("shape", 0);
-		self.shaderInt("mode", 0);
-		self.genericVAO();
-		unsafe { gl::DrawArrays(gl::QUADS, 0, 4); }
-	}
-
-	pub fn drawLine2D(&mut self, p1: glam::Vec2, p2: glam::Vec2, clr: glam::Vec4)
-	{
-		self.shaderUse("shape");
-		self.shaderVec4("clr", clr);
-		self.shaderVec3("p1", glam::vec3(p1.x, p1.y, 0.0));
-		self.shaderVec3("p2", glam::vec3(p2.x, p2.y, 0.0));
-		self.shaderInt("shape", 1);
-		self.shaderInt("mode", 0);
-		self.genericVAO();
-		unsafe { gl::DrawArrays(gl::LINES, 0, 2); }
-	}
-
-	pub fn drawRect3D(&mut self, ts: glam::Mat4, clr: glam::Vec4)
-	{
-		self.shaderUse("shape");
-		self.shaderMat4("model", ts);
-		self.shaderVec4("clr", clr);
-		self.shaderInt("shape", 0);
-		self.shaderInt("mode", 1);
-		self.meshVAO();
-		unsafe { gl::DrawArrays(gl::QUADS, 0, 24); }
-	}
-
-	pub fn drawLine3D(&mut self, p1: glam::Vec3, p2: glam::Vec3, clr: glam::Vec4)
-	{
-		self.shaderUse("shape");
-		self.shaderVec4("clr", clr);
-		self.shaderVec3("p1", p1);
-		self.shaderVec3("p2", p2);
-		self.shaderInt("shape", 1);
-		self.shaderInt("mode", 1);
-		self.meshVAO();
-		unsafe { gl::DrawArrays(gl::LINES, 0, 2); }
-	}
-
-	pub fn setup(&mut self, s: (i32, i32), fov: f32)
+	pub fn setFOV(&mut self, fov: f32)
 	{
 		self.fov = fov;
-		self.worldProj = glam::Mat4::perspective_rh_gl(
-			fov.to_radians(),
-			s.0 as f32 / s.1 as f32,
-			// 1.0,
-			0.01, 2000.0
-		);
+		self.setup();
 	}
 
-	pub fn lookAt(&mut self, p: glam::Vec3)
+	pub fn getFOV(&self) -> f32 { self.fov }
+
+	pub fn setScaler(&mut self, scaler: i32)
 	{
-		self.ts.lookAt(p);
+		self.scaler = scaler;
+		self.setup();
+	}
+
+	pub fn getScaler(&self) -> i32 { self.scaler }
+
+	pub fn setup(&mut self)
+	{
+		let (w, h) = Window::getSize();
+		self.proj = glam::Mat4::perspective_rh_gl(
+			self.fov.to_radians(),
+			w as f32 / h as f32,
+			0.01, 2000.0
+		);
+
+		let w = w / self.scaler;
+		let h = h / self.scaler;
+		
+		unsafe
+		{
+			gl::BindTexture(gl::TEXTURE_2D, self.offscreen.1);
+			gl::TexImage2D(
+				gl::TEXTURE_2D, 0, gl::RGB as i32,
+				w, h, 0, gl::RGB,
+				gl::UNSIGNED_BYTE, 0 as _
+			);
+			gl::BindTexture(gl::TEXTURE_2D, self.offscreen.2);
+			gl::TexImage2D(
+				gl::TEXTURE_2D, 0, gl::DEPTH24_STENCIL8 as i32,
+				w, h, 0,
+				gl::DEPTH_STENCIL, gl::UNSIGNED_INT_24_8, 0 as _
+			);
+		}
 	}
 
 	pub fn shaderUse(&mut self, shader: &str)

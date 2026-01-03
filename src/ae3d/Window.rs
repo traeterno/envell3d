@@ -23,7 +23,7 @@ pub struct Window
 	ui: UI,
 	net: Network,
 	world: World,
-	server: Option<std::process::Child>,
+	server: Option<std::thread::JoinHandle<()>>,
 	profiler: Profiler
 }
 
@@ -71,7 +71,10 @@ impl Window
 			&std::fs::read_to_string(path)
 			.unwrap_or(String::new())
 		);
-		if cfg.is_err() { return; }
+		if cfg.is_err()
+		{
+			panic!("Failed to init window: config error\n{}", cfg.unwrap_err());
+		}
 		let cfg = cfg.unwrap();
 		
 		let i = Window::getInstance();
@@ -292,7 +295,7 @@ impl Window
 				}
 				glfw::WindowEvent::Size(w, h) =>
 				{
-					i.cam.setSize((w, h));
+					i.cam.setup();
 					i.ui.resize();
 					unsafe
 					{
@@ -333,9 +336,7 @@ impl Window
 		if i.window.as_mut().unwrap().is_iconified() { return; }
 
 		i.cam.clear();
-		i.cam.toggleTransform(true);
 		i.cam.draw(&mut i.world);
-		i.cam.toggleTransform(false);
 		i.cam.display();
 		i.cam.draw(&mut i.ui);
 		i.profiler.restart();
@@ -576,14 +577,12 @@ impl Window
 	pub fn launchServer()
 	{
 		let i = Window::getInstance();
-		let ext = if std::env::consts::OS == "windows" { ".exe" } else { "" };
-		let path = if cfg!(debug_assertions)
+		if let Ok(s) = std::thread::Builder::new()
+			.name(String::from("Server"))
+			.spawn(crate::envell::main)
 		{
-			String::from("./target/debug/envell") + ext
-		} else { String::from("./res/system/server") + ext };
-		i.server = Some(
-			std::process::Command::new(path).arg("silent").spawn().unwrap()
-		);
+			i.server = Some(s);
+		}
 	}
 
 	pub fn setMousePos(pos: glam::Vec2)

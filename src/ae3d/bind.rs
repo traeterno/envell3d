@@ -1,6 +1,6 @@
 use mlua::{Lua, Table};
 
-use crate::ae3d::{glTF::GLTF, Mesh::Mesh, Skeleton::Skeleton, Transformable::Transformable2D};
+use crate::ae3d::{glTF::GLTF, Mesh::Mesh, Skeleton::Skeleton};
 use crate::ae3d::{Entity::Entity, Programmable::Variable, World::World};
 
 use super::{Sprite::Sprite, Text::Text, Window::Window};
@@ -63,9 +63,7 @@ fn getText(id: String) -> &'static mut Text
 fn getEntity(s: &Lua) -> &'static mut Entity
 {
 	let id: String = s.globals().get("ScriptID").unwrap();
-	Window::getWorld().getEntity(
-		id.split("_").nth(1).unwrap().to_string()
-	)
+	Window::getWorld().getEntity(id.split("_").nth(1).unwrap().to_string())
 }
 
 pub fn execFunc(script: &Lua, func: &str)
@@ -85,6 +83,15 @@ pub fn execFunc(script: &Lua, func: &str)
 			}
 		}
 	}
+}
+
+fn func<F, A, R>(s: &Lua, t: &mlua::Table, name: &str, f: F)
+where
+	F: Fn(&Lua, A) -> mlua::Result<R>
+		+ mlua::MaybeSend + 'static,
+	A: mlua::FromLuaMulti, R: mlua::IntoLuaMulti
+{
+	let _ = t.raw_set(name, s.create_function(f).unwrap());
 }
 
 pub fn sprite(s: &Lua)
@@ -139,149 +146,27 @@ pub fn sprite(s: &Lua)
 		Ok(())
 	}).unwrap());
 
-	let _ = t.set("loadAnimation",
-	s.create_function(|s, x: String|
-	{
-		*getSprite(s.globals().raw_get("ScriptID").unwrap()) = Sprite::animated(x);
-		Ok(())
-	}).unwrap());
+	// let _ = t.set("loadAnimation",
+	// s.create_function(|s, x: String|
+	// {
+	// 	*getSprite(s.globals().raw_get("ScriptID").unwrap()) = Sprite::animated(x);
+	// 	Ok(())
+	// }).unwrap());
 
-	let _ = t.set("loadImage",
-	s.create_function(|s, x: String|
-	{
-		*getSprite(s.globals().raw_get("ScriptID").unwrap()) = Sprite::image(x);
-		Ok(())
-	}).unwrap());
+	// let _ = t.set("loadImage",
+	// s.create_function(|s, x: String|
+	// {
+	// 	*getSprite(s.globals().raw_get("ScriptID").unwrap()) = Sprite::image(x);
+	// 	Ok(())
+	// }).unwrap());
+
+	// TODO Combine 'load' animations in one (use table { image = "", anim = "" })
 
 	let _ = t.set("setColor",
 	s.create_function(|s, x: (u8, u8, u8, u8)|
 	{
 		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
 		spr.setColor(x);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("setPosition",
-	s.create_function(|s, x: (f32, f32)|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.getTransformable().setPosition(glam::vec2(x.0, x.1));
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("translate",
-	s.create_function(|s, x: (f32, f32)|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.getTransformable().translate(glam::vec2(x.0, x.1));
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("getPosition",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		let x = spr.getTransformable().getPosition();
-		Ok((x.x, x.y))
-	}).unwrap());
-
-	let _ = t.set("setOrigin",
-	s.create_function(|s, x: (f32, f32)|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.getTransformable().setOrigin(glam::vec2(x.0, x.1));
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("getOrigin",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		let x = spr.getTransformable().getOrigin();
-		Ok((x.x, x.y))
-	}).unwrap());
-
-	let _ = t.set("setScale",
-	s.create_function(|s, x: (f32, f32)|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.getTransformable().setScale(glam::vec2(x.0, x.1));
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("scale",
-	s.create_function(|s, x: (f32, f32)|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.getTransformable().scale(glam::vec2(x.0, x.1));
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("getScale",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		let x = spr.getTransformable().getScale();
-		Ok((x.x, x.y))
-	}).unwrap());
-
-	let _ = t.set("setRotation",
-	s.create_function(|s, x: f32|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.getTransformable().setRotation(x);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("rotate",
-	s.create_function(|s, x: f32|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.getTransformable().rotate(x);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("getRotation",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		let x = spr.getTransformable().getRotation();
-		Ok(x)
-	}).unwrap());
-
-	let _ = t.set("applyModel",
-	s.create_function(|s, shader: String|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		Window::getCamera().shaderUse(&shader);
-		Window::getCamera().shaderMat4("model", spr.getTransformable().getMatrix());
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("getCurrentFrame",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		let f = spr.getCurrentFrame();
-		Ok((f.x, f.y, f.z, f.w))
-	}).unwrap());
-
-	let _ = t.set("bindTexture",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		unsafe
-		{
-			gl::BindTexture(gl::TEXTURE_2D, spr.getTexture());
-		}
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("tickAnimation",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.update();
 		Ok(())
 	}).unwrap());
 
@@ -360,133 +245,7 @@ pub fn text(s: &Lua)
 		Ok((c.x, c.y, c.z, c.w))
 	}).unwrap());
 
-	let _ = t.set("setPosition",
-	s.create_function(|s, x: (f32, f32)|
-	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
-		txt.getTransformable().setPosition(glam::vec2(x.0, x.1));
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("translate",
-	s.create_function(|s, x: (f32, f32)|
-	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
-		txt.getTransformable().translate(glam::vec2(x.0, x.1));
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("getPosition",
-	s.create_function(|s, _: ()|
-	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
-		let x = txt.getTransformable().getPosition();
-		Ok((x.x, x.y))
-	}).unwrap());
-
-	let _ = t.set("setOrigin",
-	s.create_function(|s, x: (f32, f32)|
-	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
-		txt.getTransformable().setOrigin(glam::vec2(x.0, x.1));
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("getOrigin",
-	s.create_function(|s, _: ()|
-	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
-		let x = txt.getTransformable().getOrigin();
-		Ok((x.x, x.y))
-	}).unwrap());
-
-	let _ = t.set("setScale",
-	s.create_function(|s, x: (f32, f32)|
-	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
-		txt.getTransformable().setScale(glam::vec2(x.0, x.1));
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("scale",
-	s.create_function(|s, x: (f32, f32)|
-	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
-		txt.getTransformable().scale(glam::vec2(x.0, x.1));
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("getScale",
-	s.create_function(|s, _: ()|
-	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
-		let x = txt.getTransformable().getScale();
-		Ok((x.x, x.y))
-	}).unwrap());
-
-	let _ = t.set("setRotation",
-	s.create_function(|s, x: f32|
-	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
-		txt.getTransformable().setRotation(x);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("rotate",
-	s.create_function(|s, x: f32|
-	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
-		txt.getTransformable().rotate(x);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("getRotation",
-	s.create_function(|s, _: ()|
-	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
-		let x = txt.getTransformable().getRotation();
-		Ok(x)
-	}).unwrap());
-
 	let _ = s.globals().set("text", t);
-}
-
-pub fn network(s: &Lua)
-{
-	let t = s.create_table().unwrap();
-
-	let _ = t.raw_set("connect",
-	s.create_function(|_, ip: String|
-	{
-		Ok(Window::getNetwork().connect(ip))
-	}).unwrap());
-
-	let _ = t.raw_set("disconnect",
-	s.create_function(|_, _: ()|
-	{
-		Window::getNetwork().reset();
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("send",
-	s.create_function(|_, data: mlua::Table|
-	{
-		let mut buf = vec![];
-		for x in data.pairs::<u8, mlua::Value>()
-		{
-			if let Ok((_, v)) = x
-			{
-				if v.is_number()
-				{
-					buf.append(&mut v.as_f32().unwrap().to_be_bytes().to_vec());
-				}
-			}
-		}
-		Window::getNetwork().send(buf);
-		Ok(())
-	}).unwrap());
-
-	let _ = s.globals().set("network", t);
 }
 
 pub fn window(script: &Lua)
@@ -654,11 +413,12 @@ pub fn window(script: &Lua)
 		Ok(())
 	}).unwrap());
 
-	let _ = table.set("uiSize",
+	let _ = table.set("uiScale",
 	script.create_function(|_, _: ()|
 	{
-		let s = Window::getUI().getSize();
-		Ok((s.x, s.y))
+		let s1 = Window::getUI().getSize();
+		let s2 = Window::getSize();
+		Ok((s2.0 as f32 / s1.x, s2.1 as f32 / s1.y))
 	}).unwrap());
 
 	let _ = table.raw_set("input",
@@ -682,28 +442,6 @@ pub fn window(script: &Lua)
 		Window::getInstance().window.as_mut().unwrap().set_clipboard_string(&x);
 		Ok(())
 	}).unwrap());
-
-	// let _ = table.raw_set("screenToWorld",
-	// script.create_function(|_, x: (f32, f32)|
-	// {
-	// 	let a = Window::getCamera().getTransformable().getPosition();
-	// 	let s1 = Window::getCamera().getSize();
-	// 	let s2 = Window::getSize();
-	// 	let s3 = glam::vec2(s1.x / s2.0 as f32, s1.y / s2.1 as f32);
-	// 	let p = -a - s1 / 2.0 + glam::vec2(x.0 * s3.x, x.1 * s3.y);
-	// 	Ok((p.x, p.y))
-	// }).unwrap());
-
-	// let _ = table.raw_set("worldToScreen",
-	// script.create_function(|_, x: (f32, f32, f32)|
-	// {
-	// 	let t = Window::getCamera().getTransformable();
-	// 	let p = t.getMatrix().transform_point3(glam::vec3(x.0, x.1, x.2));
-	// 	let s1 = Window::getCamera().getSize();
-	// 	let s2 = Window::getSize();
-	// 	let s3 = glam::vec2(s2.0 as f32 / s1.x, s2.1 as f32 / s1.y);
-	// 	Ok((p.x * s3.x, p.y * s3.y))
-	// }).unwrap());
 
 	let _ = table.raw_set("droppedFiles",
 	script.create_function(|s, _: ()|
@@ -795,106 +533,6 @@ pub fn world(script: &Lua)
 		Window::getWorld().spawn(data.0, data.1, obj);
 		Ok(())
 	}).unwrap());
-
-	let _ = t.raw_set("createTrigger",
-	script.create_function(|_, x: (String, String, f32, f32, f32, f32)|
-	{
-		Window::getWorld().createTrigger(
-			x.0, x.1,
-			glam::vec4(x.2, x.3, x.4, x.5
-		));
-		Ok(())
-	}).unwrap());
-	
-	let _ = t.raw_set("modifyTrigger",
-	script.create_function(|_, x: (String, f32, f32, f32, f32)|
-	{
-		Window::getWorld().modifyTrigger(
-			x.0, glam::vec4(x.1, x.2, x.3, x.4)
-		);
-		Ok(())
-	}).unwrap());
-	
-	let _ = t.raw_set("getTriggers",
-	script.create_function(|s, _: ()|
-	{
-		let t = s.create_table().unwrap();
-		for (id, hb) in Window::getWorld().getTriggers()
-		{
-			let h = s.create_table().unwrap();
-			let _ = h.raw_set("name", hb.0.as_str());
-			let _ = h.raw_set("x", hb.1.x);
-			let _ = h.raw_set("y", hb.1.y);
-			let _ = h.raw_set("w", hb.1.z);
-			let _ = h.raw_set("h", hb.1.w);
-			let _ = t.raw_set(id.clone(), h);
-		}
-		Ok(t)
-	}).unwrap());
-
-	let _ = t.raw_set("setNum",
-	script.create_function(|_, data: (String, f32)|
-	{
-		Window::getWorld().getProgrammable().insert(
-			data.0,
-			Variable { num: data.1, string: String::new() }
-		);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("setStr",
-	script.create_function(|_, data: (String, String)|
-	{
-		Window::getWorld().getProgrammable().insert(
-			data.0,
-			Variable { num: 0.0, string: data.1 }
-		);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("getNum",
-	script.create_function(|_, data: String|
-	{
-		let v = Variable::default();
-		Ok(Window::getWorld().getProgrammable().get(&data).unwrap_or(&v).num)
-	}).unwrap());
-	
-	let _ = t.raw_set("getStr",
-	script.create_function(|_, data: String|
-	{
-		let v = Variable::default();
-		Ok(Window::getWorld().getProgrammable().get(&data).unwrap_or(&v).string.clone())
-	}).unwrap());
-	
-	let _ = t.raw_set("setupCamera",
-	script.create_function(|_, fov: f32|
-	{
-		Window::getCamera().setup(Window::getSize(), fov);
-		Ok(())
-	}).unwrap());
-	
-	let _ = t.raw_set("setCamPos",
-	script.create_function(|_, x: (f32, f32, f32)|
-	{
-		Window::getCamera().getTransformable().setPosition(
-			glam::vec3(x.0, x.1, x.2)
-		);
-		Ok(())
-	}).unwrap());
-	
-	let _ = t.raw_set("getCamPos",
-	script.create_function(|_, _: ()|
-	{
-		let p = Window::getCamera().getTransformable().getPosition();
-		Ok((p.x, p.y, p.z))
-	}).unwrap());
-	
-	let _ = t.raw_set("camLookAt",
-	script.create_function(|_, p: (f32, f32, f32)|
-	{
-		Window::getCamera().lookAt(glam::vec3(p.0, p.1, p.2));
-		Ok(())
-	}).unwrap());
 	
 	let _ = t.raw_set("kill",
 	script.create_function(|_, x: String|
@@ -913,114 +551,6 @@ pub fn world(script: &Lua)
 	let _ = script.globals().raw_set("world", t);
 }
 
-pub fn shapes2D(script: &Lua)
-{
-	let t = script.create_table().unwrap();
-
-	let _ = t.raw_set("rect",
-	script.create_function(|_, args: mlua::Table|
-	{
-		let x = args.raw_get::<f32>("x").unwrap_or(0.0);
-		let y = args.raw_get::<f32>("y").unwrap_or(0.0);
-		let ox = args.raw_get::<f32>("ox").unwrap_or(0.0);
-		let oy = args.raw_get::<f32>("oy").unwrap_or(0.0);
-		let w = args.raw_get::<f32>("w").unwrap_or(1.0);
-		let h = args.raw_get::<f32>("h").unwrap_or(1.0);
-		let angle = args.raw_get::<f32>("angle").unwrap_or(0.0);
-		let r = args.raw_get::<f32>("r").unwrap_or(0.0) / 255.0;
-		let g = args.raw_get::<f32>("g").unwrap_or(0.0) / 255.0;
-		let b = args.raw_get::<f32>("b").unwrap_or(0.0) / 255.0;
-		let a = args.raw_get::<f32>("a").unwrap_or(255.0) / 255.0;
-		Window::getCamera().drawRect2D(
-			Transformable2D::quick(
-				glam::vec2(x, y), angle,
-				glam::vec2(w, h),
-				glam::vec2(ox, oy)
-			), glam::vec4(r, g, b, a)
-		);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("custom",
-	script.create_function(|_, _: ()|
-	{
-		Window::getCamera().genericVAO();
-		unsafe { gl::DrawArrays(gl::QUADS, 0, 4); }
-		Ok(())
-	}).unwrap());
-
-	let _ = script.globals().raw_set("shapes2D", t);
-}
-
-pub fn shapes3D(script: &Lua)
-{
-	let t = script.create_table().unwrap();
-
-	let _ = t.raw_set("rect",
-	script.create_function(|_, args: mlua::Table|
-	{
-		// let x = args.raw_get::<f32>("x").unwrap_or(0.0);
-		// let y = args.raw_get::<f32>("y").unwrap_or(0.0);
-		// let z = args.raw_get::<f32>("z").unwrap_or(0.0);
-		// let ox = args.raw_get::<f32>("ox").unwrap_or(0.0);
-		// let oy = args.raw_get::<f32>("oy").unwrap_or(0.0);
-		// let oz = args.raw_get::<f32>("oz").unwrap_or(0.0);
-		// let w = args.raw_get::<f32>("w").unwrap_or(1.0);
-		// let h = args.raw_get::<f32>("h").unwrap_or(1.0);
-		// let d = args.raw_get::<f32>("d").unwrap_or(1.0);
-		// // let angle = args.raw_get::<f32>("angle").unwrap_or(0.0);
-		let r = args.raw_get::<f32>("r").unwrap_or(0.0) / 255.0;
-		let g = args.raw_get::<f32>("g").unwrap_or(0.0) / 255.0;
-		let b = args.raw_get::<f32>("b").unwrap_or(0.0) / 255.0;
-		let a = args.raw_get::<f32>("a").unwrap_or(255.0) / 255.0;
-		// Window::getCamera().drawRect3D(
-		// 	Transformable3D::quick(
-		// 		glam::vec2(x, y), angle,
-		// 		glam::vec2(w, h),
-		// 		glam::vec2(ox, oy)
-		// 	), glam::vec4(r, g, b, a)
-		// );
-		Window::getCamera().drawRect3D(glam::Mat4::IDENTITY,
-			glam::vec4(r, g, b, a)
-		);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("line",
-	script.create_function(|_, args: mlua::Table|
-	{
-		Window::getCamera().drawLine3D(
-			glam::vec3(
-				args.raw_get::<f32>("x1").unwrap_or(0.0),
-				args.raw_get::<f32>("y1").unwrap_or(0.0),
-				args.raw_get::<f32>("z1").unwrap_or(0.0)
-			),
-			glam::vec3(
-				args.raw_get::<f32>("x2").unwrap_or(0.0),
-				args.raw_get::<f32>("y2").unwrap_or(0.0),
-				args.raw_get::<f32>("z2").unwrap_or(0.0)
-			),
-			glam::vec4(
-				args.raw_get::<f32>("r").unwrap_or(0.0) / 255.0,
-				args.raw_get::<f32>("g").unwrap_or(0.0) / 255.0,
-				args.raw_get::<f32>("b").unwrap_or(0.0) / 255.0,
-				args.raw_get::<f32>("a").unwrap_or(0.0) / 255.0
-			)
-		);
-		Ok(())
-	}).unwrap());
-
-	// let _ = t.raw_set("custom",
-	// script.create_function(|_, _: ()|
-	// {
-	// 	Window::getCamera().genericVAO();
-	// 	unsafe { gl::DrawArrays(gl::QUADS, 0, 4); }
-	// 	Ok(())
-	// }).unwrap());
-
-	let _ = script.globals().raw_set("shapes3D", t);
-}
-
 pub fn shaders(script: &Lua)
 {
 	let t = script.create_table().unwrap();
@@ -1029,6 +559,14 @@ pub fn shaders(script: &Lua)
 	script.create_function(|_, name: String|
 	{
 		Window::getCamera().shaderUse(&name);
+		Ok(())
+	}).unwrap());
+	
+	let _ = t.raw_set("setBool",
+	script.create_function(|_, x: (String, String, bool)|
+	{
+		Window::getCamera().shaderUse(&x.0);
+		Window::getCamera().shaderBool(&x.1, x.2);
 		Ok(())
 	}).unwrap());
 	
@@ -1093,28 +631,33 @@ pub fn profiler(script: &Lua)
     let _ = script.globals().set("profiler", t);
 }
 
-pub fn mesh(script: &Lua)
+pub fn mesh(s: &Lua)
 {
-    let t = script.create_table().unwrap();
+    let t = s.create_table().unwrap();
 
-	let _ = t.set("setPosition",
-	script.create_function(|s, pos: (f32, f32, f32)|
+	func(s, &t, "setTransform", |s, x: Table|
 	{
-		let mesh = getMesh(s.globals().raw_get("ScriptID").unwrap());
-		mesh.getTransformable().setPosition(glam::vec3(pos.0, pos.1, pos.2));
+		let ts = getEntity(s).getMesh().getTransformable();
+		if let Ok(pos) = x.raw_get::<Table>("pos")
+		{
+			let mut p = ts.getPosition();
+			p.x = pos.raw_get("x").unwrap_or(p.x);
+			p.y = pos.raw_get("y").unwrap_or(p.y);
+			p.z = pos.raw_get("z").unwrap_or(p.z);
+			ts.setPosition(p);
+		}
+		if let Ok(angle) = x.raw_get::<Table>("angle")
+		{
+			ts.setRotation(glam::vec2(
+				angle.raw_get("yaw").unwrap_or(0.0),
+				angle.raw_get("pitch").unwrap_or(0.0)
+			));
+		}
 		Ok(())
-	}).unwrap());
-
-	let _ = t.set("setRotation",
-	script.create_function(|s, angle: (f32, f32, f32)|
-	{
-		let mesh = getMesh(s.globals().raw_get("ScriptID").unwrap());
-		mesh.getTransformable().setRotation(glam::vec3(angle.0, angle.1, angle.2));
-		Ok(())
-	}).unwrap());
+	});
 
 	let _ = t.set("load",
-	script.create_function(|s, p: (String, usize)|
+	s.create_function(|s, p: (String, usize)|
 	{
 		let mesh = getMesh(s.globals().raw_get("ScriptID").unwrap());
 		let gltf = GLTF::load(p.0);
@@ -1123,7 +666,7 @@ pub fn mesh(script: &Lua)
 	}).unwrap());
 
 	let _ = t.set("draw",
-	script.create_function(|s, _: ()|
+	s.create_function(|s, _: ()|
 	{
 		Window::getCamera().draw(
 			getMesh(s.globals().raw_get("ScriptID").unwrap())
@@ -1131,7 +674,7 @@ pub fn mesh(script: &Lua)
 		Ok(())
 	}).unwrap());
 	
-    let _ = script.globals().set("mesh", t);
+    let _ = s.globals().set("mesh", t);
 }
 
 pub fn skeleton(script: &Lua)
@@ -1168,14 +711,202 @@ pub fn skeleton(script: &Lua)
 		Ok(())
 	}).unwrap());
 
-	let _ = t.set("draw",
-	script.create_function(|s, _: ()|
+	let _ = script.globals().set("skeleton", t);
+}
+
+pub fn network(s: &Lua)
+{
+	let t = s.create_table().unwrap();
+
+	func(s, &t, "connect", |_, ip: String| Ok(Window::getNetwork().connect(ip)));
+	func(s, &t, "disconnect", |_, _: ()| { Window::getNetwork().reset(); Ok(()) });
+	func(s, &t, "isReady", |_, _: ()| Ok(Window::getNetwork().isReady()));
+	func(s, &t, "id", |_, _: ()| Ok(Window::getNetwork().getID()));
+
+	func(s, &t, "send", |_, data: Table|
 	{
-		Window::getCamera().draw(
-			getSkeleton(s.globals().raw_get("ScriptID").unwrap())
+		let _ = data.len();
+		Ok(())
+	});
+	
+	func(s, &t, "setup", |_, data: Table|
+	{
+		Window::getNetwork().setup(
+			data.raw_get("tickRate").unwrap_or(10),
+			data.raw_get("id").unwrap_or(0),
+			data.raw_get("port").unwrap_or(26225)
 		);
 		Ok(())
-	}).unwrap());
+	});
 
-	let _ = script.globals().set("skeleton", t);
+	func(s, &t, "hasMessage", |_, topic: String|
+	{
+		Ok(Window::getNetwork().hasMessage(topic))
+	});
+
+	func(s, &t, "getMessage", |s, topic: String|
+	{
+		let t = s.create_table().unwrap();
+		let data = Window::getNetwork().getMessage(topic.clone());
+		match topic.as_str()
+		{
+			"setup" =>
+			{
+				let _ = t.raw_set("tickRate", data["tickRate"].as_u8().unwrap());
+				let _ = t.raw_set("port", data["port"].as_u16().unwrap());
+				let _ = t.raw_set("id", data["id"].as_u8().unwrap());
+			}
+			x => { println!("Unknown topic: {x}"); }
+		}
+		Ok(t)
+	});
+
+	func(s, &t, "setState", |_, data: (f32, f32, f32, f32, f32)|
+	{
+		Window::getNetwork().setState(
+			glam::vec3(data.0, data.1, data.2),
+			glam::vec2(data.3, data.4)
+		);
+		Ok(())
+	});
+
+	func(s, &t, "getState", |_, id: u8|
+	{
+		let s = Window::getNetwork().getState(id);
+		Ok((s.0.x, s.0.y, s.0.z, s.1.x, s.1.y))
+	});
+
+	let _ = s.globals().set("network", t);
+}
+
+pub fn camera(s: &Lua)
+{
+	let t = s.create_table().unwrap();
+
+	func(s, &t, "setFOV", |_, x: f32|
+	{
+		Window::getCamera().setFOV(x);
+		Ok(())
+	});
+
+	func(s, &t, "setScale", |_, x: i32|
+	{
+		Window::getCamera().setScaler(x);
+		Ok(())
+	});
+
+	func(s, &t, "setMode", |_, data: Table|
+	{
+		let ts = Window::getCamera().getTransformable();
+		if let Ok(_) = data.raw_get::<Table>("firstPerson")
+		{
+			ts.setRotationMode(super::Transformable::RotationMode::LookAtFP);
+		}
+		if let Ok(tp) = data.raw_get::<Table>("thirdPerson")
+		{
+			ts.setRotationMode(super::Transformable::RotationMode::LookAtTP(
+				tp.raw_get::<f32>("distance").unwrap_or(2.0)
+			));
+		}
+		Ok(())
+	});
+
+	func(s, &t, "setTransform", |_, x: Table|
+	{
+		let ts = Window::getCamera().getTransformable();
+		if let Ok(pos) = x.raw_get::<Table>("pos")
+		{
+			let p = ts.getPosition();
+			ts.setPosition(glam::vec3(
+				pos.raw_get("x").unwrap_or(p.x),
+				pos.raw_get("y").unwrap_or(p.y),
+				pos.raw_get("z").unwrap_or(p.z)
+			));
+		}
+		if let Ok(angle) = x.raw_get::<Table>("angle")
+		{
+			ts.setRotation(glam::vec2(
+				angle.raw_get("yaw").unwrap_or(0.0),
+				angle.raw_get("pitch").unwrap_or(0.0)
+			));
+		}
+		Ok(())
+	});
+
+	func(s, &t, "addTransform", |_, x: Table|
+	{
+		let ts = Window::getCamera().getTransformable();
+		if let Ok(pos) = x.raw_get::<Table>("translation")
+		{
+			ts.translate(glam::vec3(
+				pos.raw_get("x").unwrap_or(0.0),
+				pos.raw_get("y").unwrap_or(0.0),
+				pos.raw_get("z").unwrap_or(0.0)
+			));
+		}
+		if let Ok(pos) = x.raw_get::<Table>("movement")
+		{
+			let d = ts.getFront();
+			let dx = pos.raw_get("x").unwrap_or(0.0);
+			let dy = pos.raw_get("y").unwrap_or(0.0);
+			let dz = pos.raw_get("z").unwrap_or(0.0);
+			ts.translate(glam::vec3(
+				d.x * dz - d.y * dx,
+				dy,
+				d.y * dz + d.x * dx
+			));
+		}
+		if let Ok(pos) = x.raw_get::<Table>("fly")
+		{
+			let d = ts.getDirection();
+			let dx = pos.raw_get("x").unwrap_or(0.0);
+			let dy = pos.raw_get("y").unwrap_or(0.0);
+			let dz = pos.raw_get("z").unwrap_or(0.0);
+			ts.translate(glam::vec3(
+				d.x * dz - d.z * dx,
+				d.y * dz + dy,
+				d.z * dz + d.x * dx
+			));
+		}
+		if let Ok(angle) = x.raw_get::<Table>("angle")
+		{
+			ts.rotate(glam::vec2(
+				angle.raw_get("yaw").unwrap_or(0.0),
+				angle.raw_get("pitch").unwrap_or(0.0)
+			));
+		}
+		Ok(())
+	});
+
+	func(s, &t, "getTransform", |s, x: Table|
+	{
+		let out = s.create_table().unwrap();
+		let ts = Window::getCamera().getTransformable();
+		for i in x.pairs::<u8, String>()
+		{
+			if let Ok(i) = i
+			{
+				if i.1 == "pos"
+				{
+					let p = s.create_table().unwrap();
+					let pos = ts.getPosition();
+					let _ = p.raw_set("x", pos.x);
+					let _ = p.raw_set("y", pos.y);
+					let _ = p.raw_set("z", pos.z);
+					let _ = out.raw_set("pos", p);
+				}
+				if i.1 == "angle"
+				{
+					let a = s.create_table().unwrap();
+					let angle = ts.getRotation();
+					let _ = a.raw_set("yaw", angle.x);
+					let _ = a.raw_set("pitch", angle.y);
+					let _ = out.raw_set("angle", a);
+				}
+			}
+		}
+		Ok(out)
+	});
+
+	let _ = s.globals().raw_set("camera", t);
 }

@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "envell"
-path = "src/envell.rs"
+path = "src/server.rs"
 
 [dependencies]
 gl = "0.14.0"

@@ -1,7 +1,7 @@
 #![allow(non_snake_case, static_mut_refs, dead_code)]
 // #![windows_subsystem = "windows"]
 mod ae3d;
-mod server;
+mod envell;
 
 use ae3d::Window::Window;
 
@@ -11,7 +11,7 @@ fn main()
 	Window::resetDT();
 
 	let cam = Window::getCamera();
-	cam.toggleTransform(true);
+	// cam.toggleTransform(true);
 	while Window::isOpen()
 	{
 

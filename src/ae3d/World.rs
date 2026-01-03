@@ -2,15 +2,13 @@ use std::collections::HashMap;
 
 use mlua::Lua;
 
-use crate::ae3d::{bind, Camera::{Camera, Drawable}, Entity::Entity, Programmable::Programmable, Window::Window};
+use crate::ae3d::{bind, Camera::{Camera, Drawable}, Entity::Entity, Window::Window};
 
 pub struct World
 {
 	name: String,
 	script: Lua,
 	ents: HashMap<String, Entity>,
-	prog: Programmable,
-	triggers: HashMap<String, (String, glam::Vec4)>,
 	init: bool
 }
 
@@ -23,8 +21,6 @@ impl World
 			name: String::new(),
 			script: Lua::new(),
 			ents: HashMap::new(),
-			prog: Programmable::new(),
-			triggers: HashMap::new(),
 			init: true
 		}
 	}
@@ -55,8 +51,8 @@ impl World
 		bind::window(&self.script);
 		bind::network(&self.script);
 		bind::world(&self.script);
-		bind::shapes3D(&self.script);
 		bind::shaders(&self.script);
+		bind::camera(&self.script);
 	}
 
 	pub fn update(&mut self)
@@ -93,29 +89,6 @@ impl World
 	pub fn kill(&mut self, id: String)
 	{
 		self.ents.remove(&id);
-	}
-
-	pub fn createTrigger(&mut self, id: String, name: String, hitbox: glam::Vec4)
-	{
-		self.triggers.insert(id, (name, hitbox));
-	}
-
-	pub fn modifyTrigger(&mut self, id: String, hitbox: glam::Vec4)
-	{
-		if let Some(t) = self.triggers.get_mut(&id)
-		{
-			t.1 = hitbox;
-		}
-	}
-
-	pub fn getTriggers(&self) -> &HashMap<String, (String, glam::Vec4)>
-	{
-		&self.triggers
-	}
-
-	pub fn getProgrammable(&mut self) -> &mut Programmable
-	{
-		&mut self.prog
 	}
 
 	pub fn getName(&self) -> String { self.name.clone() }

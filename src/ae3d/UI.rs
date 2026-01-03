@@ -39,7 +39,6 @@ impl Object
 		bind::window(&obj.script);
 		bind::world(&obj.script);
 		bind::network(&obj.script);
-		bind::shapes2D(&obj.script);
 		bind::profiler(&obj.script);
 
 		let mut f = None;
@@ -147,7 +146,8 @@ pub struct UI
 {
 	baseSize: glam::Vec2,
 	objects: Vec<Object>,
-	reload: String
+	reload: String,
+	proj: glam::Mat4
 }
 
 impl UI
@@ -158,7 +158,8 @@ impl UI
 		{
 			baseSize: glam::Vec2::ZERO,
 			objects: vec![],
-			reload: String::new()
+			reload: String::new(),
+			proj: glam::Mat4::IDENTITY
 		}
 	}
 
@@ -209,6 +210,8 @@ impl UI
 				}
 			}
 		}
+
+		self.resize();
 	}
 
 	pub fn getObject(&mut self, name: String) -> &mut Object
@@ -259,6 +262,15 @@ impl UI
 
 	pub fn resize(&mut self)
 	{
+		let (w, h) = Window::getSize();
+		let uiProj = glam::Mat4::orthographic_rh_gl(
+			0.0, w as f32, h as f32, 0.0,
+			-1.0, 1.0
+		);
+		let cam = Window::getCamera();
+		cam.shaderUse("text");
+		cam.shaderMat4("projection", uiProj);
+		
 		for obj in &self.objects
 		{
 			if let Ok(f) = obj.script.globals().get::<Function>("OnResized")

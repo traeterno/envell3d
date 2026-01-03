@@ -65,13 +65,25 @@ impl Transformable2D
 }
 
 #[derive(Default, Debug, Clone)]
+pub enum RotationMode
+{
+	#[default] Euler,
+	LookAtFP,
+	LookAtTP(f32)
+}
+
+#[derive(Default, Debug, Clone)]
 pub struct Transformable3D
 {
 	position: glam::Vec3,
-	rotation: glam::Quat,
+	direction: glam::Vec3,
+	front: glam::Vec2,
+	angle: glam::Vec2,
+
 	model: glam::Mat4,
 	invTrans: glam::Mat4,
-	reloadModel: bool
+	reloadModel: bool,
+	rotationMode: RotationMode
 }
 
 impl Transformable3D
@@ -81,25 +93,52 @@ impl Transformable3D
 		Self
 		{
 			position: glam::Vec3::ZERO,
-			rotation: glam::Quat::IDENTITY,
+			direction: glam::Vec3::Z,
+			front: glam::Vec2::Y,
+			angle: glam::Vec2::ZERO,
+			
 			model: glam::Mat4::IDENTITY,
 			invTrans: glam::Mat4::IDENTITY,
-			reloadModel: true
+			reloadModel: true,
+			rotationMode: RotationMode::Euler
 		}
 	}
 
 	fn update(&mut self)
 	{
-		self.model =
-			glam::Mat4::from_translation(self.position) *
-			glam::Mat4::from_quat(self.rotation);
+		self.model = match self.rotationMode
+		{
+			RotationMode::Euler =>
+			{
+				glam::Mat4::from_translation(self.position) *
+				glam::Mat4::from_rotation_y(self.angle.x.to_radians()) *
+				glam::Mat4::from_rotation_x(self.angle.y.to_radians())
+			}
+			RotationMode::LookAtFP =>
+			{
+				glam::Mat4::look_at_rh(
+					self.position,
+					self.position + self.direction,
+					glam::Vec3::Y
+				)
+			}
+			RotationMode::LookAtTP(dist) =>
+			{
+				glam::Mat4::look_at_rh(
+					self.position - self.direction * dist,
+					self.position,
+					glam::Vec3::Y
+				)
+			}
+		};
 		
 		self.invTrans = self.model.inverse().transpose();
-		// self.model =
-		// 	glam::Mat4::from_translation(glam::vec3(self.position.x, self.position.y, 0.0))
-		// 	.mul_mat4(&glam::Mat4::from_rotation_z(self.rotation.to_radians()))
-		// 	.mul_mat4(&glam::Mat4::from_scale(glam::vec3(self.scale.x, self.scale.y, 1.0)))
-		// 	.mul_mat4(&glam::Mat4::from_translation(-glam::vec3(self.origin.x, self.origin.y, 0.0)));
+	}
+
+	pub fn setRotationMode(&mut self, mode: RotationMode)
+	{
+		self.rotationMode = mode;
+		self.reloadModel = true;
 	}
 
 	pub fn getMatrix(&mut self) -> glam::Mat4
@@ -126,24 +165,30 @@ impl Transformable3D
 	}
 	pub fn getPosition(&self) -> glam::Vec3 { self.position }
 
-	pub fn setRotation(&mut self, v: glam::Vec3)
+	pub fn setRotation(&mut self, angle: glam::Vec2)
 	{
-		self.rotation = glam::Quat::from_euler(
-			glam::EulerRot::YXZ,
-			v.x.to_radians(),
-			v.y.to_radians(),
-			v.z.to_radians()
+		self.angle.x = angle.x % 360.0;
+		self.angle.y = angle.y.clamp(-89.0, 89.0);
+		let yaw = self.angle.x.to_radians();
+		let pitch = self.angle.y.to_radians();
+
+		self.front = glam::vec2(yaw.cos(), yaw.sin());
+
+		self.direction = glam::vec3(
+			self.front.x * pitch.cos(),
+			pitch.sin(),
+			self.front.y * pitch.cos()
 		);
+
+		self.reloadModel = true;
 	}
 
-	pub fn getRotation(&self) -> glam::Quat { self.rotation }
-
-	pub fn lookAt(&mut self, p: glam::Vec3)
+	pub fn rotate(&mut self, angle: glam::Vec2)
 	{
-		self.reloadModel = false;
-		self.model = glam::Mat4::look_at_rh(
-			self.position,
-			p, glam::Vec3::Y
-		);
+		self.setRotation(self.angle + angle);
 	}
+
+	pub fn getDirection(&self) -> glam::Vec3 { self.direction }
+	pub fn getFront(&self) -> glam::Vec2 { self.front }
+	pub fn getRotation(&self) -> glam::Vec2 { self.angle }
 }

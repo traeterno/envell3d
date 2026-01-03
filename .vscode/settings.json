@@ -9,6 +9,7 @@
 		"shapes3D",
 		"skeleton",
 		"shaders",
-		"shapes2D"
+		"shapes2D",
+		"camera"
 	]
 }

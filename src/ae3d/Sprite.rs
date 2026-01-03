@@ -316,21 +316,21 @@ impl Drawable for Sprite
 {
 	fn draw(&mut self, cam: &mut Camera)
 	{
-		self.update();
-		cam.shaderUse("sprite");
-		cam.shaderVec4("frame",
-			if self.animations.len() == 0 { self.rect }
-			else { self.getCurrentFrame() }
-		);
-		cam.shaderVec2("texSize", self.texSize);
-		cam.shaderMat4("model", self.ts.getMatrix());
-		cam.shaderVec4("color", self.color);
-		unsafe
-		{
-			// gl::ActiveTexture(gl::TEXTURE0);
-			gl::BindTexture(gl::TEXTURE_2D, self.texture);
-			Window::getCamera().genericVAO();
-			gl::DrawArrays(gl::QUADS, 0, 4);
-		}
+		// self.update();
+		// cam.shaderUse("sprite");
+		// cam.shaderVec4("frame",
+		// 	if self.animations.len() == 0 { self.rect }
+		// 	else { self.getCurrentFrame() }
+		// );
+		// cam.shaderVec2("texSize", self.texSize);
+		// cam.shaderMat4("model", self.ts.getMatrix());
+		// cam.shaderVec4("color", self.color);
+		// unsafe
+		// {
+		// 	// gl::ActiveTexture(gl::TEXTURE0);
+		// 	gl::BindTexture(gl::TEXTURE_2D, self.texture);
+		// 	Window::getCamera().genericVAO();
+		// 	gl::DrawArrays(gl::QUADS, 0, 4);
+		// }
 	}
 }

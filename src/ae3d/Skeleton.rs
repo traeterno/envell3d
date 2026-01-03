@@ -1,8 +1,6 @@
 use std::{collections::HashMap};
 
-use glam::Vec4Swizzles;
-
-use crate::ae3d::{glTF::{self, Node, GLTF}, Camera::{Camera, Drawable}, Window::Window};
+use crate::ae3d::{glTF::{self, Node, GLTF}, Camera::Camera, Window::Window};
 
 #[derive(Default, Debug)]
 pub struct Bone
@@ -34,18 +32,6 @@ impl Bone
 			if n.childrenID.is_empty() { 1.0 }
 			else { nodes.get(&n.childrenID[0]).unwrap().translation.length() };
 		b
-	}
-
-	pub fn draw(&mut self, cam: &mut Camera)
-	{
-		let p1 = (self.ts * glam::Vec4::W).xyz();
-		let p2 = (self.ts * glam::vec4(0.0, self.length, 0.0, 1.0)).xyz();
-		cam.drawLine3D(p1, p2, glam::vec4(1.0, 0.0, 0.0, 1.0));
-
-		for b in &mut self.children
-		{
-			b.draw(cam);
-		}
 	}
 
 	pub fn update(&mut self, ts: &HashMap<usize, glam::Quat>, parent: glam::Mat4) ->
@@ -332,19 +318,5 @@ impl Skeleton
 		cam.shaderMat4Array("bind", &self.joints);
 		cam.shaderMat4Array("invBind", &self.inverseBind);
 		cam.shaderInt("jc", self.joints.len() as i32);
-	}
-}
-
-impl Drawable for Skeleton
-{
-	fn draw(&mut self, cam: &mut Camera)
-	{
-		cam.drawLine3D(glam::Vec3::X * 10.0, glam::Vec3::ZERO, glam::Vec4::W);
-		cam.drawLine3D(glam::Vec3::Y * 10.0, glam::Vec3::ZERO, glam::Vec4::W);
-		cam.drawLine3D(glam::Vec3::Z * 10.0, glam::Vec3::ZERO, glam::Vec4::W);
-
-		unsafe { gl::Disable(gl::DEPTH_TEST); }
-		self.root.draw(cam);
-		unsafe { gl::Enable(gl::DEPTH_TEST); }
 	}
 }
