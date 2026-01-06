@@ -29,8 +29,9 @@ pub enum Resp
 	ChatMessages(Vec<(String, String)>),
 	NewMessage(String, String),
 	State(State),
-	Settings(Config),
-	ChatLength(usize)
+	GetSettings(Config),
+	ChatLength(usize),
+	SaveSettings(bool, String)
 }
 
 pub type Response = (usize, Resp);
@@ -236,12 +237,12 @@ fn setupWS(
 		let mut h = HashMap::new();
 		for (var, value) in args
 		{
-			h.insert(var, value);
+			h.insert(var.to_lowercase(), value);
 		}
 		h
 	};
-	
-	let key = args.get("Sec-WebSocket-Key").unwrap_or(&"").to_string();
+
+	let key = args.get("sec-websocket-key").unwrap_or(&"").to_string();
 	if key.is_empty() { println!("No key is provided."); return false; }
 
 	let magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -301,7 +302,7 @@ fn sendWS(tcp: &mut TcpStream, msg: Resp)
 				}
 			];
 		}
-		Resp::Settings(cfg) =>
+		Resp::GetSettings(cfg) =>
 		{
 			topic = "getSettings";
 			obj = json::object!{
@@ -348,6 +349,14 @@ fn sendWS(tcp: &mut TcpStream, msg: Resp)
 		{
 			topic = "chatLength";
 			obj = json::from(l);
+		}
+		Resp::SaveSettings(result, reason) =>
+		{
+			topic = "saveSettings";
+			obj = json::object!{
+				ok: result,
+				reason: reason.clone()
+			};
 		}
 	}
 

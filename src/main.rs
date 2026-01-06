@@ -7,14 +7,10 @@ use ae3d::Window::Window;
 
 fn main()
 {
-	Window::init("res/global/config.json");
+	Window::init("res/global/game.json");
 	Window::resetDT();
-
-	let cam = Window::getCamera();
-	// cam.toggleTransform(true);
 	while Window::isOpen()
 	{
-
 		Window::update();
 		Window::render();
 	}

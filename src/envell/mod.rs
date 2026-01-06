@@ -8,6 +8,41 @@ mod state;
 mod web;
 pub mod message;
 
+fn launchWS() -> (
+	std::sync::mpsc::Sender<web::Response>,
+	std::sync::mpsc::Receiver<web::Request>
+)
+{
+	let (toWeb, fromMainToWeb) =
+		std::sync::mpsc::channel::<web::Response>();
+
+	let (fromWebToMain, fromWeb) =
+		std::sync::mpsc::channel::<web::Request>();
+	
+	let _ = std::thread::Builder::new()
+		.name(String::from("WebServer"))
+		.spawn(|| web::main(fromWebToMain, fromMainToWeb));
+	(toWeb, fromWeb)
+}
+
+fn launchSession() -> (
+	std::sync::mpsc::Sender<player::Response>,
+	std::sync::mpsc::Receiver<player::Request>
+)
+{
+	let (toSession, fromMainToSession) =
+		std::sync::mpsc::channel::<player::Response>();
+
+	let (fromSessionToMain, fromSession) =
+		std::sync::mpsc::channel::<player::Request>();
+
+	let _ = std::thread::Builder::new()
+		.name(String::from("Session"))
+		.spawn(|| player::main(fromSessionToMain, fromMainToSession));
+
+	(toSession, fromSession)
+}
+
 pub fn main()
 {
 	let mut cfg = config::load("res/system/cfg.json");
@@ -21,25 +56,15 @@ pub fn main()
 
 	let state = state::load("res/system/save.json");
 
-	let (toWeb, fromMainToWeb) =
-		std::sync::mpsc::channel::<web::Response>();
+	let (
+		mut toWeb,
+		mut fromWeb
+	) = launchWS();
 
-	let (fromWebToMain, fromWeb) =
-		std::sync::mpsc::channel::<web::Request>();
-
-	let (toSession, fromMainToSession) =
-		std::sync::mpsc::channel::<player::Response>();
-
-	let (fromSessionToMain, fromSession) =
-		std::sync::mpsc::channel::<player::Request>();
-
-	let _ = std::thread::Builder::new()
-		.name(String::from("WebServer"))
-		.spawn(|| web::main(fromWebToMain, fromMainToWeb));
-
-	let _ = std::thread::Builder::new()
-		.name(String::from("Session"))
-		.spawn(|| player::main(fromSessionToMain, fromMainToSession));
+	let (
+		mut toSession,
+		mut fromSession
+	) = launchSession();
 
 	let _ = toSession.send((0, player::Resp::UpdateConfig(cfg.clone())));
 
@@ -50,55 +75,97 @@ pub fn main()
 	loop
 	{
 		let timer = Instant::now();
-		while let Ok((id, msg)) = fromWeb.try_recv()
+		'webRecv: loop
 		{
-			match msg
+			match fromWeb.try_recv()
 			{
-				web::Req::ChatMessages(offset) =>
+				Ok((id, msg)) =>
 				{
-					let mut msgs =
-						if offset >= chat.len() { vec![] }
-						else { chat[offset..chat.len()].to_vec() };
-					msgs.reverse();
-					let _ = toWeb.send((id, web::Resp::ChatMessages(msgs)));
+					match msg
+					{
+						web::Req::ChatMessages(offset) =>
+						{
+							let mut msg =
+								if offset >= chat.len() { vec![] }
+								else { chat[offset..chat.len()].to_vec() };
+							msg.reverse();
+							let _ = toWeb.send((id, web::Resp::ChatMessages(msg)));
+						}
+						web::Req::NewMessage(msg) =>
+						{
+							println!("WebClient #{id}: {msg}");
+							let name = format!("WebClient #{id}");
+							chat.push((name.clone(), msg.clone()));
+							let _ = toWeb.send((id, web::Resp::NewMessage(name, msg)));
+							let _ = toWeb.send((id, web::Resp::ChatLength(chat.len())));
+						}
+						web::Req::State =>
+						{
+							let _ = toWeb.send((id, web::Resp::State(state.clone())));
+						}
+						web::Req::GetSettings =>
+						{
+							let _ = toWeb.send((id, web::Resp::GetSettings(cfg.clone())));
+						}
+						web::Req::SaveSettings(new) =>
+						{
+							// TODO check active players
+							config::apply(&mut cfg, new);
+							sysTimer = Duration::from_secs_f32(
+								1.0 / cfg.sysTickRate as f32
+							);
+							let _ = toSession.send(
+								(0, player::Resp::UpdateConfig(cfg.clone()))
+							);
+							config::save(&cfg, "res/system/save.json");
+							let _ = toWeb.send((id, web::Resp::SaveSettings(
+								true,
+								String::new()
+							)));
+						}
+					}
 				}
-				web::Req::NewMessage(msg) =>
+				Err(x) =>
 				{
-					println!("WebClient #{id}: {msg}");
-					let name = format!("WebClient #{id}");
-					chat.push((name.clone(), msg.clone()));
-					let _ = toWeb.send((id, web::Resp::NewMessage(name, msg)));
-					let _ = toWeb.send((id, web::Resp::ChatLength(chat.len())));
-				}
-				web::Req::State =>
-				{
-					let _ = toWeb.send((id, web::Resp::State(state.clone())));
-				}
-				web::Req::GetSettings =>
-				{
-					let _ = toWeb.send((id, web::Resp::Settings(cfg.clone())));
-				}
-				web::Req::SaveSettings(new) =>
-				{
-					cfg.firstCP = new["firstCP"].as_str().unwrap_or("").to_string();
-					cfg.itemCellSize = new["itemCellSize"].as_u8().unwrap_or(10);
-					cfg.playersCount = new["playersCount"].as_u8().unwrap_or(5);
-					cfg.port = new["port"].as_u16().unwrap_or(26225);
-					cfg.tickRate = new["tickRate"].as_u8().unwrap_or(10);
-					cfg.sysTickRate = new["sysTickRate"].as_u16().unwrap_or(100);
-					sysTimer = Duration::from_secs_f32(1.0 / cfg.sysTickRate as f32);
-					let _ = toSession.send((0, player::Resp::UpdateConfig(cfg.clone())));
-					// let _ = toWeb.send((id, web::Resp::SaveSettings(
-					// 	false,
-					// 	String::from("ИДИ НАХУЙ УЁБИЩЕ")
-					// )));
+					match x
+					{
+						std::sync::mpsc::TryRecvError::Empty => {}
+						std::sync::mpsc::TryRecvError::Disconnected =>
+						{
+							println!("WebServer channel has disconnected. Reloading...");
+							(toWeb, fromWeb) = launchWS();
+						}
+					}
+					break 'webRecv;
 				}
 			}
 		}
 
-		while let Ok((id, req)) = fromSession.try_recv()
+		'playerRecv: loop
 		{
-			println!("{id}: {req:?}");
+			match fromSession.try_recv()
+			{
+				Ok((id, req)) =>
+				{
+					println!("{id}: {req:?}");
+				}
+				Err(x) =>
+				{
+					match x
+					{
+						std::sync::mpsc::TryRecvError::Empty => {}
+						std::sync::mpsc::TryRecvError::Disconnected =>
+						{
+							println!("Player session channel has disconnected. Reloading...");
+							(toSession, fromSession) = launchSession();
+							let _ = toSession.send(
+								(0, player::Resp::UpdateConfig(cfg.clone()))
+							);
+						}
+					}
+					break 'playerRecv;
+				}
+			}
 		}
 
 		if timer.elapsed() < sysTimer

@@ -653,6 +653,10 @@ pub fn mesh(s: &Lua)
 				angle.raw_get("pitch").unwrap_or(0.0)
 			));
 		}
+		if let Ok(scale) = x.raw_get::<f32>("scale")
+		{
+			ts.setScale(scale);
+		}
 		Ok(())
 	});
 

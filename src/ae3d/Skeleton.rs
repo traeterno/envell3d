@@ -52,7 +52,7 @@ impl Bone
 	}
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub enum Interpolation
 {
 	#[default] Step,
@@ -83,7 +83,7 @@ impl Interpolation
 	}
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Keyframe
 {
 	timestamp: f32,
@@ -95,7 +95,8 @@ pub struct Keyframe
 pub struct Animation
 {
 	frames: HashMap<usize, Vec<Keyframe>>,
-	currentTime: f32
+	currentTime: f32,
+	duration: f32
 }
 
 impl Animation
@@ -103,6 +104,7 @@ impl Animation
 	pub fn fromGLTF(gltf: &GLTF, base: &glTF::Animation) -> (String, Self)
 	{
 		let mut a = Self::default();
+		a.duration = base.duration;
 
 		let mut samplers = vec![];
 		
@@ -172,8 +174,9 @@ impl Animation
 	{
 		let mut ts = HashMap::new();
 
-		self.currentTime += Window::getDeltaTime();
-		self.currentTime = self.currentTime.fract();
+		self.currentTime = (
+			self.currentTime + Window::getDeltaTime()
+		) % self.duration;
 
 		for (&node, timeline) in &self.frames
 		{
@@ -183,7 +186,16 @@ impl Animation
 				continue;
 			}
 			let mut i = 0;
-			while self.currentTime >= timeline[i].timestamp { i += 1; }
+			while self.currentTime >= timeline.get(i).cloned().unwrap_or_default().timestamp
+			{
+				if i < timeline.len() { i += 1; }
+				else { break; }
+			}
+			if i == timeline.len()
+			{
+				ts.insert(node, timeline.last().unwrap().rotation);
+				continue;
+			}
 			let f1 = &timeline[i - 1];
 			let f2 = &timeline[i];
 			let t = (self.currentTime - f1.timestamp) / (f2.timestamp - f1.timestamp);

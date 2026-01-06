@@ -70,7 +70,8 @@ pub struct Animation
 {
 	pub name: String,
 	pub samplers: Vec<AnimationSampler>,
-	pub channels: Vec<AnimationChannel>
+	pub channels: Vec<AnimationChannel>,
+	pub duration: f32
 }
 
 #[derive(Default, Debug)]
@@ -136,6 +137,8 @@ impl GLTF
 		if src.is_err() { println!("Error READ {path}: {src:?}"); return gltf; }
 		let src = json::parse(&src.unwrap());
 		if src.is_err() { println!("Error PARSE {path}: {src:?}"); return gltf; }
+
+		// TODO simplify parser
 
 		for section in src.unwrap().entries()
 		{
@@ -319,6 +322,7 @@ impl GLTF
 				for anim in section.1.members()
 				{
 					let mut a = Animation::default();
+					a.duration = 1.0;
 					for var in anim.entries()
 					{
 						if var.0 == "name"
@@ -375,6 +379,16 @@ impl GLTF
 									}
 								}
 								a.samplers.push(s);
+							}
+						}
+						if var.0 == "extras"
+						{
+							for x in var.1.entries()
+							{
+								if x.0 == "duration"
+								{
+									a.duration = x.1.as_f32().unwrap();
+								}
 							}
 						}
 					}

@@ -25,6 +25,16 @@ impl Default for Config
 	}
 }
 
+pub fn apply(cfg: &mut Config, data: json::JsonValue)
+{
+	cfg.firstCP = data["firstCP"].as_str().unwrap_or("").to_string();
+	cfg.itemCellSize = data["itemCellSize"].as_u8().unwrap_or(10);
+	cfg.playersCount = data["playersCount"].as_u8().unwrap_or(5);
+	cfg.port = data["port"].as_u16().unwrap_or(26225);
+	cfg.tickRate = data["tickRate"].as_u8().unwrap_or(10);
+	cfg.sysTickRate = data["sysTickRate"].as_u16().unwrap_or(100);
+}
+
 pub fn load(path: &str) -> Config
 {
 	let mut c = Config::default();

@@ -10,6 +10,7 @@
 		"skeleton",
 		"shaders",
 		"shapes2D",
-		"camera"
+		"camera",
+		"profiler"
 	]
 }

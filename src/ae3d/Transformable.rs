@@ -83,7 +83,8 @@ pub struct Transformable3D
 	model: glam::Mat4,
 	invTrans: glam::Mat4,
 	reloadModel: bool,
-	rotationMode: RotationMode
+	rotationMode: RotationMode,
+	scale: f32
 }
 
 impl Transformable3D
@@ -100,7 +101,8 @@ impl Transformable3D
 			model: glam::Mat4::IDENTITY,
 			invTrans: glam::Mat4::IDENTITY,
 			reloadModel: true,
-			rotationMode: RotationMode::Euler
+			rotationMode: RotationMode::Euler,
+			scale: 1.0
 		}
 	}
 
@@ -112,7 +114,8 @@ impl Transformable3D
 			{
 				glam::Mat4::from_translation(self.position) *
 				glam::Mat4::from_rotation_y(self.angle.x.to_radians()) *
-				glam::Mat4::from_rotation_x(self.angle.y.to_radians())
+				glam::Mat4::from_rotation_x(self.angle.y.to_radians()) *
+				glam::Mat4::from_scale(glam::Vec3::splat(self.scale))
 			}
 			RotationMode::LookAtFP =>
 			{
@@ -191,4 +194,10 @@ impl Transformable3D
 	pub fn getDirection(&self) -> glam::Vec3 { self.direction }
 	pub fn getFront(&self) -> glam::Vec2 { self.front }
 	pub fn getRotation(&self) -> glam::Vec2 { self.angle }
+
+	pub fn setScale(&mut self, scale: f32)
+	{
+		self.scale = scale;
+		self.reloadModel = true;
+	}
 }
