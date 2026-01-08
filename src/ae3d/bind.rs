@@ -185,21 +185,51 @@ pub fn text(s: &Lua)
 {
 	let t = s.create_table().unwrap();
 
-	let _ = t.set("draw",
-	s.create_function(|s, _: ()|
+	func(s, &t, "draw", |s, _: ()|
 	{
 		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
 		Window::getCamera().draw(txt);
 		Ok(())
-	}).unwrap());
+	});
 
-	let _ = t.set("size",
-	s.create_function(|s, _: ()|
+	func(s, &t, "size", |s, _: ()|
 	{
 		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
 		let d = txt.getDimensions();
 		Ok((d.x, d.y))
-	}).unwrap());
+	});
+
+	func(s, &t, "setTransform", |s, data: Table|
+	{
+		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		let ts = txt.getTransformable();
+		if let Ok(pos) = data.raw_get::<Table>("pos")
+		{
+			ts.setPosition(glam::vec2(
+				pos.raw_get("x").unwrap_or(0.0),
+				pos.raw_get("y").unwrap_or(0.0)
+			));
+		}
+		if let Ok(angle) = data.raw_get("angle")
+		{
+			ts.setRotation(angle);
+		}
+		if let Ok(scale) = data.raw_get::<Table>("scale")
+		{
+			ts.setScale(glam::vec2(
+				scale.raw_get("x").unwrap_or(1.0),
+				scale.raw_get("y").unwrap_or(1.0)
+			))
+		}
+		if let Ok(origin) = data.raw_get::<Table>("origin")
+		{
+			ts.setOrigin(glam::vec2(
+				origin.raw_get("x").unwrap_or(0.0),
+				origin.raw_get("y").unwrap_or(0.0)
+			));
+		}
+		Ok(())
+	});
 
 	let _ = t.set("bounds",
 	s.create_function(|s, _: ()|
@@ -906,6 +936,15 @@ pub fn camera(s: &Lua)
 					let _ = a.raw_set("yaw", angle.x);
 					let _ = a.raw_set("pitch", angle.y);
 					let _ = out.raw_set("angle", a);
+				}
+				if i.1 == "direction"
+				{
+					let d = s.create_table().unwrap();
+					let dir = ts.getDirection();
+					let _ = d.raw_set("x", dir.x);
+					let _ = d.raw_set("y", dir.y);
+					let _ = d.raw_set("z", dir.z);
+					let _ = out.raw_set("direction", d);
 				}
 			}
 		}

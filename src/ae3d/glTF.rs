@@ -587,9 +587,7 @@ impl GLTF
 
 		if materialID != usize::MAX
 		{
-			let (name, id) = self.material(materialID);
-			println!("{name}: {id}");
-			material = id;
+			material = self.material(materialID).1;
 		}
 		
 		(vertices, normals, elements, joints, uvs, material)

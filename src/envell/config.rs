@@ -7,6 +7,7 @@ pub struct Config
 	pub port: u16,
 	pub playersCount: u8,
 	pub sysTickRate: u16,
+	pub locked: bool
 }
 
 impl Default for Config
@@ -20,7 +21,8 @@ impl Default for Config
 			itemCellSize: 10,
 			port: 26225,
 			playersCount: 5,
-			sysTickRate: 100
+			sysTickRate: 100,
+			locked: false
 		}
 	}
 }
@@ -62,4 +64,47 @@ pub fn save(cfg: &Config, path: &str)
 		port: cfg.port,
 		tickRate: cfg.tickRate,
 	}));
+}
+
+pub fn settings(cfg: &Config) -> json::JsonValue
+{
+	json::object!{
+		"Сервер": {
+			tickRate: {
+				type: "range",
+				name: "Частота синхронизации игроков",
+				value: cfg.tickRate,
+				props: { min: 1, max: 100 }
+			},
+			firstCP: {
+				type: "string",
+				name: "Первый чекпоинт",
+				value: cfg.firstCP.clone()
+			},
+			itemCellSize: {
+				type: "range",
+				name: "Количество предметов в ячейке",
+				value: cfg.itemCellSize,
+				props: { min: 1, max: 255 }
+			},
+			playersCount: {
+				type: "range",
+				name: "Количество игроков",
+				value: cfg.playersCount,
+				props: { min: 1, max: 32 }
+			},
+			port: {
+				type: "range",
+				name: "Порт сервера",
+				value: cfg.port,
+				props: { min: 1024, max: 65535 }
+			},
+			sysTickRate: {
+				type: "range",
+				name: "Частота обновления сервера",
+				value: cfg.sysTickRate,
+				props: { min: 1, max: 1024 }
+			}
+		}
+	}
 }

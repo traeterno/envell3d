@@ -97,7 +97,6 @@ pub fn main()
 							let name = format!("WebClient #{id}");
 							chat.push((name.clone(), msg.clone()));
 							let _ = toWeb.send((id, web::Resp::NewMessage(name, msg)));
-							let _ = toWeb.send((id, web::Resp::ChatLength(chat.len())));
 						}
 						web::Req::State =>
 						{
@@ -109,19 +108,33 @@ pub fn main()
 						}
 						web::Req::SaveSettings(new) =>
 						{
-							// TODO check active players
+							if cfg.locked
+							{
+								let _ = toWeb.send(
+									(id, web::Resp::Modal("saveSettings-fail".to_string()))
+								);
+								continue;
+							}
 							config::apply(&mut cfg, new);
+							config::save(&cfg, "res/system/save.json");
 							sysTimer = Duration::from_secs_f32(
 								1.0 / cfg.sysTickRate as f32
 							);
 							let _ = toSession.send(
 								(0, player::Resp::UpdateConfig(cfg.clone()))
 							);
-							config::save(&cfg, "res/system/save.json");
-							let _ = toWeb.send((id, web::Resp::SaveSettings(
-								true,
-								String::new()
-							)));
+							let _ = toWeb.send(
+								(id, web::Resp::Modal("saveSettings-success".to_string()))
+							);
+						}
+						web::Req::Modal(id, result) =>
+						{
+							match id.as_str()
+							{
+								"saveSettings-success" => { println!("Settings saved."); }
+								"saveSettings-fail" => { println!("Failed to save settings."); }
+								x => { println!("New modal:\n{x}: {result:#}") }
+							}
 						}
 					}
 				}
@@ -147,7 +160,14 @@ pub fn main()
 			{
 				Ok((id, req)) =>
 				{
-					println!("{id}: {req:?}");
+					match req
+					{
+						player::Req::UnlockSettings(active) =>
+						{
+							cfg.locked = active;
+						}
+						_ => println!("{id}: {req:?}")
+					}
 				}
 				Err(x) =>
 				{

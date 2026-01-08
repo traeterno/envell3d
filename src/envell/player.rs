@@ -28,7 +28,8 @@ type Party = HashMap<u8, Player>;
 pub enum Req
 {
 	GetPlayerInfo(String, u8),
-	Login(String)
+	Login(String),
+	UnlockSettings(bool)
 }
 
 #[derive(Debug)]
@@ -95,12 +96,6 @@ pub fn main(
 			{
 				Resp::UpdateConfig(cfg) =>
 				{
-					if !players.is_empty()
-					{
-						// TODO block ability to update settings when someone is in game
-						println!("Can't apply config, someone is in game.");
-						continue;
-					}
 					println!("Player session: Config updated.");
 					config = cfg;
 
@@ -151,6 +146,10 @@ pub fn main(
 						Interest::READABLE
 					);
 					let ip = tcp.peer_addr().unwrap().ip().to_string();
+					if players.len() == 0
+					{
+						let _ = toMain.send((socketID, Req::UnlockSettings(false)));
+					}
 					players.insert(id, Player
 					{
 						tcp: tcp,
@@ -209,6 +208,10 @@ pub fn main(
 				let _ = poll.registry().deregister(&mut player.tcp);
 				players.remove(&socketID);
 				// TODO broadcast disconnection to other players
+				if players.len() == 0
+				{
+					let _ = toMain.send((socketID, Req::UnlockSettings(true)));
+				}
 				continue;
 			}
 

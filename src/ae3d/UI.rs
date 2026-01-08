@@ -270,12 +270,15 @@ impl UI
 		let cam = Window::getCamera();
 		cam.shaderUse("text");
 		cam.shaderMat4("projection", uiProj);
+
+		let sx = w as f32 / self.baseSize.x;
+		let sy = h as f32 / self.baseSize.y;
 		
 		for obj in &self.objects
 		{
 			if let Ok(f) = obj.script.globals().get::<Function>("OnResized")
 			{
-				let _ = f.call::<Value>(());
+				let _ = f.call::<Value>((sx, sy));
 			}
 		}
 	}

@@ -3,7 +3,7 @@ use std::{collections::HashMap, io::{Read, Write}};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use mio::{net::{TcpListener, TcpStream}, Events, Interest, Poll, Token};
 
-use crate::envell::{config::Config, state::State};
+use crate::envell::{config::{self, Config}, state::State};
 
 #[derive(PartialEq, Debug)]
 enum ClientMode
@@ -19,7 +19,8 @@ pub enum Req
 	NewMessage(String),
 	State,
 	GetSettings,
-	SaveSettings(json::JsonValue)
+	SaveSettings(json::JsonValue),
+	Modal(String, json::JsonValue)
 }
 
 pub type Request = (usize, Req);
@@ -30,8 +31,7 @@ pub enum Resp
 	NewMessage(String, String),
 	State(State),
 	GetSettings(Config),
-	ChatLength(usize),
-	SaveSettings(bool, String)
+	Modal(String)
 }
 
 pub type Response = (usize, Resp);
@@ -75,16 +75,6 @@ pub fn main(
 						if *m == ClientMode::WebSocket
 						{
 							sendWS(c, Resp::NewMessage(user.clone(), msg.clone()));
-						}
-					}
-				}
-				Resp::ChatLength(l) =>
-				{
-					for (t, (m, c)) in &mut clients
-					{
-						if *m == ClientMode::WebSocket && msg.0 != t.0
-						{
-							sendWS(c, Resp::ChatLength(l));
 						}
 					}
 				}
@@ -175,6 +165,132 @@ pub fn main(
 	}
 }
 
+fn sendWS(tcp: &mut TcpStream, msg: Resp)
+{
+	let topic: &'static str;
+	let mut obj: json::JsonValue;
+	match msg
+	{
+		Resp::ChatMessages(history) =>
+		{
+			topic = "chatMessages";
+			obj = json::array![];
+			for (user, msg) in history
+			{
+				let _ = obj.push(json::object!{
+					user: user,
+					msg: msg
+				});
+			}
+		}
+		Resp::NewMessage(user, msg) =>
+		{
+			topic = "chatMessages";
+			obj = json::array![
+				{
+					user: user.clone(),
+					msg: msg.clone()
+				}
+			];
+		}
+		Resp::State(state) =>
+		{
+			topic = "state";
+			obj = json::array![
+				{
+					title: "Сохранение",
+					props: {
+						"Чекпоинт": state.checkpoint.clone(),
+						"Дата сохранения": state.date.clone()
+					}
+				}
+			];
+		}
+		Resp::GetSettings(cfg) =>
+		{
+			topic = "getSettings";
+			obj = config::settings(&cfg);
+		}
+		Resp::Modal(id) =>
+		{
+			topic = "modal";
+			obj = json::object!{
+				id: id.clone(),
+				components: [],
+				options: {
+					title: "Что-то пошло не так",
+					exit: true,
+					ok: "",
+					cancel: ""
+				}
+			};
+			let path = format!("res/web/modals/{id}.json");
+			if let Ok(f) = std::fs::read_to_string(path)
+			{
+				if let Ok(mut x) = json::parse(&f)
+				{
+					let _ = x.insert("id", id);
+					obj = x;
+				}
+			}
+		}
+	}
+
+	let raw = json::stringify(json::object!{ type: topic, data: obj });
+
+	let len =
+		if raw.len() <= 125 { vec![raw.len() as u8] }
+		else { [&[126u8] as &[u8], &(raw.len() as u16).to_be_bytes()].concat() };
+
+	let _ = tcp.write_all(&[
+		&[0b10_00_00_01 as u8],
+		len.as_slice(),
+		raw.as_bytes()
+	].concat());
+}
+
+fn handleWS(
+	id: usize,
+	msg: &str,
+	data: json::JsonValue,
+	toMain: &std::sync::mpsc::Sender<Request>
+)
+{
+	match msg
+	{
+		"chatMessages" =>
+		{
+			let _ = toMain.send((id,
+				Req::ChatMessages(data["messagesLength"].as_usize().unwrap_or(0))
+			));
+		}
+		"newMessage" =>
+		{
+			let _ = toMain.send((id,
+				Req::NewMessage(data["msg"].as_str().unwrap_or("").to_string())
+			));
+		}
+		"saveSettings" =>
+		{
+			let _ = toMain.send((id, Req::SaveSettings(data)));
+		}
+		"modal" =>
+		{
+			let _ = toMain.send((id,  Req::Modal(
+				data["id"].as_str().unwrap_or("").to_string(),
+				data["result"].clone()
+			)));
+		}
+		x =>
+		{
+			println!("Unknown request: {x}");
+			println!("{data:#}");
+		}
+	}
+}
+
+////////// LOW LEVEL STUFF //////////
+
 fn handleHTTP(tcp: &mut TcpStream, buf: &[u8]) -> u8
 {
 	let raw = String::from_utf8_lossy(buf).to_string();
@@ -261,118 +377,6 @@ fn setupWS(
 	true
 }
 
-fn sendWS(tcp: &mut TcpStream, msg: Resp)
-{
-	let topic: &'static str;
-	let mut obj: json::JsonValue;
-	match msg
-	{
-		Resp::ChatMessages(history) =>
-		{
-			topic = "chatMessages";
-			obj = json::array![];
-			for (user, msg) in history
-			{
-				let _ = obj.push(json::object!{
-					user: user,
-					msg: msg
-				});
-			}
-		}
-		Resp::NewMessage(user, msg) =>
-		{
-			topic = "chatMessages";
-			obj = json::array![
-				{
-					user: user.clone(),
-					msg: msg.clone()
-				}
-			];
-		}
-		Resp::State(state) =>
-		{
-			topic = "state";
-			obj = json::array![
-				{
-					title: "Сохранение",
-					props: {
-						"Чекпоинт": state.checkpoint.clone(),
-						"Дата сохранения": state.date.clone()
-					}
-				}
-			];
-		}
-		Resp::GetSettings(cfg) =>
-		{
-			topic = "getSettings";
-			obj = json::object!{
-				"Сервер": {
-					tickRate: {
-						type: "range",
-						name: "Частота синхронизации игроков",
-						value: cfg.tickRate,
-						props: { min: 1, max: 100 }
-					},
-					firstCP: {
-						type: "string",
-						name: "Первый чекпоинт",
-						value: cfg.firstCP.clone()
-					},
-					itemCellSize: {
-						type: "range",
-						name: "Количество предметов в ячейке",
-						value: cfg.itemCellSize,
-						props: { min: 1, max: 255 }
-					},
-					playersCount: {
-						type: "range",
-						name: "Количество игроков",
-						value: cfg.playersCount,
-						props: { min: 1, max: 32 }
-					},
-					port: {
-						type: "range",
-						name: "Порт сервера",
-						value: cfg.port,
-						props: { min: 1024, max: 65535 }
-					},
-					sysTickRate: {
-						type: "range",
-						name: "Частота обновления сервера",
-						value: cfg.sysTickRate,
-						props: { min: 1, max: 1024 }
-					}
-				}
-			};
-		}
-		Resp::ChatLength(l) =>
-		{
-			topic = "chatLength";
-			obj = json::from(l);
-		}
-		Resp::SaveSettings(result, reason) =>
-		{
-			topic = "saveSettings";
-			obj = json::object!{
-				ok: result,
-				reason: reason.clone()
-			};
-		}
-	}
-
-	let raw = json::stringify(json::object!{ type: topic, data: obj });
-
-	let len =
-		if raw.len() <= 125 { vec![raw.len() as u8] }
-		else { [&[126u8] as &[u8], &(raw.len() as u16).to_be_bytes()].concat() };
-
-	let _ = tcp.write_all(&[
-		&[0b10_00_00_01 as u8],
-		len.as_slice(),
-		raw.as_bytes()
-	].concat());
-}
-
 fn receiveWS(buf: &[u8]) -> Option<(String, json::JsonValue)>
 {
 	let isFinal = buf[0] & 0b10_00_00_00 == 128;
@@ -406,37 +410,4 @@ fn receiveWS(buf: &[u8]) -> Option<(String, json::JsonValue)>
 
 	let (msg, data) = msg.entries().nth(0).unwrap();
 	Some((msg.to_string(), data.to_owned()))
-}
-
-fn handleWS(
-	id: usize,
-	msg: &str,
-	data: json::JsonValue,
-	toMain: &std::sync::mpsc::Sender<Request>
-)
-{
-	match msg
-	{
-		"chatMessages" =>
-		{
-			let _ = toMain.send((id,
-				Req::ChatMessages(data["messagesLength"].as_usize().unwrap_or(0))
-			));
-		}
-		"newMessage" =>
-		{
-			let _ = toMain.send((id,
-				Req::NewMessage(data["msg"].as_str().unwrap_or("").to_string())
-			));
-		}
-		"saveSettings" =>
-		{
-			let _ = toMain.send((id, Req::SaveSettings(data)));
-		}
-		x =>
-		{
-			println!("Unknown request: {x}");
-			println!("{data:#}");
-		}
-	}
 }

@@ -174,9 +174,8 @@ impl Animation
 	{
 		let mut ts = HashMap::new();
 
-		self.currentTime = (
-			self.currentTime + Window::getDeltaTime()
-		) % self.duration;
+		self.currentTime = (self.currentTime + Window::getDeltaTime())
+			.clamp(0.0, self.duration);
 
 		for (&node, timeline) in &self.frames
 		{
@@ -201,12 +200,8 @@ impl Animation
 			let t = (self.currentTime - f1.timestamp) / (f2.timestamp - f1.timestamp);
 			let r1 = f1.rotation;
 			let r2 = f2.rotation;
-			ts.insert(node, glam::Quat::from_vec4(glam::vec4(
-				f1.func.apply(r1.x, r2.x, t),
-				f1.func.apply(r1.y, r2.y, t),
-				f1.func.apply(r1.z, r2.z, t),
-				f1.func.apply(r1.w, r2.w, t)
-			)));
+			let x = f1.func.apply(0.0, 1.0, t);
+			ts.insert(node, r1.slerp(r2, x));
 		}
 		
 		ts
@@ -309,6 +304,16 @@ impl Skeleton
 			if let Some(a) = self.anims.get_mut(&self.currentAnim)
 			{
 				a.currentTime = 0.0;
+			}
+		}
+		else
+		{
+			if let Some(a) = self.anims.get_mut(&self.currentAnim)
+			{
+				if a.duration == a.currentTime
+				{
+					a.currentTime = 0.0;
+				}
 			}
 		}
 	}

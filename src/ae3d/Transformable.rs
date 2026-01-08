@@ -64,7 +64,7 @@ impl Transformable2D
 	}
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub enum RotationMode
 {
 	#[default] Euler,
@@ -113,8 +113,8 @@ impl Transformable3D
 			RotationMode::Euler =>
 			{
 				glam::Mat4::from_translation(self.position) *
-				glam::Mat4::from_rotation_y(self.angle.x.to_radians()) *
 				glam::Mat4::from_rotation_x(self.angle.y.to_radians()) *
+				glam::Mat4::from_rotation_y(self.angle.x.to_radians()) *
 				glam::Mat4::from_scale(glam::Vec3::splat(self.scale))
 			}
 			RotationMode::LookAtFP =>
@@ -171,7 +171,11 @@ impl Transformable3D
 	pub fn setRotation(&mut self, angle: glam::Vec2)
 	{
 		self.angle.x = angle.x % 360.0;
-		self.angle.y = angle.y.clamp(-89.0, 89.0);
+		if self.rotationMode != RotationMode::Euler
+		{
+			self.angle.y = angle.y.clamp(-89.0, 89.0);
+		}
+		else { self.angle.y = angle.y; }
 		let yaw = self.angle.x.to_radians();
 		let pitch = self.angle.y.to_radians();
 
