@@ -1,9 +1,10 @@
 use mlua::{Lua, Table};
 
+use crate::ae3d::UI;
 use crate::ae3d::{glTF::GLTF, Mesh::Mesh, Skeleton::Skeleton};
 use crate::ae3d::{Entity::Entity, Programmable::Variable, World::World};
 
-use super::{Sprite::Sprite, Text::Text, Window::Window};
+use super::Window::Window;
 
 fn getScript(id: String) -> &'static mlua::Lua
 {
@@ -16,54 +17,16 @@ fn getScript(id: String) -> &'static mlua::Lua
 	}
 }
 
-fn getSprite(id: String) -> &'static mut Sprite
-{
-	let mut id = id.split("_");
-
-	match id.nth(0).unwrap()
-	{
-		"ui" => Window::getUI().getObject(id.nth(0).unwrap().to_string()).getSprite(),
-		x => panic!("Sprite Lua: {x} not defined")
-	}
-}
-
-fn getMesh(id: String) -> &'static mut Mesh
-{
-	let mut id = id.split("_");
-
-	match id.nth(0).unwrap()
-	{
-		"ent" => Window::getWorld().getEntity(id.nth(0).unwrap().to_string()).getMesh(),
-		x => panic!("Sprite Lua: {x} not defined")
-	}
-}
-
-fn getSkeleton(id: String) -> &'static mut Skeleton
-{
-	let mut id = id.split("_");
-
-	match id.nth(0).unwrap()
-	{
-		"ent" => Window::getWorld().getEntity(id.nth(0).unwrap().to_string()).getSkeleton(),
-		x => panic!("Sprite Lua: {x} not defined")
-	}
-}
-
-fn getText(id: String) -> &'static mut Text
-{
-	let mut id = id.split("_");
-	
-	match id.nth(0).unwrap()
-	{
-		"ui" => Window::getUI().getObject(id.nth(0).unwrap().to_string()).getText(),
-		x => panic!("Text Lua: {x} not defined")
-	}
-}
-
 fn getEntity(s: &Lua) -> &'static mut Entity
 {
 	let id: String = s.globals().get("ScriptID").unwrap();
 	Window::getWorld().getEntity(id.split("_").nth(1).unwrap().to_string())
+}
+
+fn getUIobj(s: &Lua) -> &'static mut UI::Object
+{
+	let id: String = s.globals().get("ScriptID").unwrap();
+	Window::getUI().getObject(id.split("_").nth(1).unwrap().to_string())
 }
 
 pub fn execFunc(script: &Lua, func: &str)
@@ -98,85 +61,7 @@ pub fn sprite(s: &Lua)
 {
 	let t = s.create_table().unwrap();
 
-	let _ = t.set("draw",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		Window::getCamera().draw(spr);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("size",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		let s = spr.getFrameSize();
-		Ok((s.x, s.y))
-	}).unwrap());
-
-	let _ = t.set("texSize",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		let s = spr.getTexSize();
-		Ok((s.x, s.y))
-	}).unwrap());
-
-	let _ = t.set("bounds",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		let s = spr.getBounds();
-		Ok((s.x, s.y, s.z, s.w))
-	}).unwrap());
-
-	let _ = t.set("setTextureRect",
-	s.create_function(|s, x: (f32, f32, f32, f32)|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.setTextureRect(glam::vec4(x.0, x.1, x.2, x.3));
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("setAnimation",
-	s.create_function(|s, x: String|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.setAnimation(x);
-		Ok(())
-	}).unwrap());
-
-	// let _ = t.set("loadAnimation",
-	// s.create_function(|s, x: String|
-	// {
-	// 	*getSprite(s.globals().raw_get("ScriptID").unwrap()) = Sprite::animated(x);
-	// 	Ok(())
-	// }).unwrap());
-
-	// let _ = t.set("loadImage",
-	// s.create_function(|s, x: String|
-	// {
-	// 	*getSprite(s.globals().raw_get("ScriptID").unwrap()) = Sprite::image(x);
-	// 	Ok(())
-	// }).unwrap());
-
-	// TODO Combine 'load' animations in one (use table { image = "", anim = "" })
-
-	let _ = t.set("setColor",
-	s.create_function(|s, x: (u8, u8, u8, u8)|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.setColor(x);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.set("resetAnimation",
-	s.create_function(|s, _: ()|
-	{
-		let spr = getSprite(s.globals().raw_get("ScriptID").unwrap());
-		spr.restart();
-		Ok(())
-	}).unwrap());
+	// TODO rewrite functions to new style
 
 	let _ = s.globals().set("sprite", t);
 }
@@ -187,21 +72,21 @@ pub fn text(s: &Lua)
 
 	func(s, &t, "draw", |s, _: ()|
 	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		let txt = getUIobj(s).getText();
 		Window::getCamera().draw(txt);
 		Ok(())
 	});
 
 	func(s, &t, "size", |s, _: ()|
 	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		let txt = getUIobj(s).getText();
 		let d = txt.getDimensions();
 		Ok((d.x, d.y))
 	});
 
 	func(s, &t, "setTransform", |s, data: Table|
 	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		let txt = getUIobj(s).getText();
 		let ts = txt.getTransformable();
 		if let Ok(pos) = data.raw_get::<Table>("pos")
 		{
@@ -231,10 +116,51 @@ pub fn text(s: &Lua)
 		Ok(())
 	});
 
+	func(s, &t, "getTransform", |s, data: Table|
+	{
+		let t = s.create_table().unwrap();
+		let ts = getUIobj(s).getText().getTransformable();
+		for x in data.pairs::<u8, String>()
+		{
+			if let Ok((_, var)) = x
+			{
+				if var == "pos"
+				{
+					let p = s.create_table().unwrap();
+					let pos = ts.getPosition();
+					let _ = p.raw_set("x", pos.x);
+					let _ = p.raw_set("y", pos.y);
+					let _ = t.raw_set("pos", p);
+				}
+				if var == "scale"
+				{
+					let s = s.create_table().unwrap();
+					let scale = ts.getScale();
+					let _ = s.raw_set("x", scale.x);
+					let _ = s.raw_set("y", scale.y);
+					let _ = t.raw_set("scale", s);
+				}
+				if var == "origin"
+				{
+					let o = s.create_table().unwrap();
+					let origin = ts.getOrigin();
+					let _ = o.raw_set("x", origin.x);
+					let _ = o.raw_set("y", origin.y);
+					let _ = t.raw_set("origin", o);
+				}
+				if var == "angle"
+				{
+					let _ = t.raw_set("angle", ts.getRotation());
+				}
+			}
+		}
+		Ok(t)
+	});
+
 	let _ = t.set("bounds",
 	s.create_function(|s, _: ()|
 	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		let txt = getUIobj(s).getText();
 		let d = txt.getBounds();
 		Ok((d.x, d.y, d.z, d.w))
 	}).unwrap());
@@ -242,7 +168,7 @@ pub fn text(s: &Lua)
 	let _ = t.set("setString",
 	s.create_function(|s, x: String|
 	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		let txt = getUIobj(s).getText();
 		txt.setString(x);
 		Ok(())
 	}).unwrap());
@@ -250,14 +176,14 @@ pub fn text(s: &Lua)
 	let _ = t.set("getString",
 	s.create_function(|s, _: ()|
 	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		let txt = getUIobj(s).getText();
 		Ok(txt.getString())
 	}).unwrap());
 
 	let _ = t.set("setColor",
 	s.create_function(|s, x: (u8, u8, u8, u8)|
 	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		let txt = getUIobj(s).getText();
 		txt.setColor(glam::vec4(
 			x.0 as f32 / 255.0,
 			x.1 as f32 / 255.0,
@@ -270,7 +196,7 @@ pub fn text(s: &Lua)
 	let _ = t.set("getColor",
 	s.create_function(|s, _: ()|
 	{
-		let txt = getText(s.globals().raw_get("ScriptID").unwrap());
+		let txt = getUIobj(s).getText();
 		let c = txt.getColor();
 		Ok((c.x, c.y, c.z, c.w))
 	}).unwrap());
@@ -678,9 +604,10 @@ pub fn mesh(s: &Lua)
 		}
 		if let Ok(angle) = x.raw_get::<Table>("angle")
 		{
-			ts.setRotation(glam::vec2(
+			ts.getOrientation().set(glam::vec3(
 				angle.raw_get("yaw").unwrap_or(0.0),
-				angle.raw_get("pitch").unwrap_or(0.0)
+				angle.raw_get("pitch").unwrap_or(0.0),
+				angle.raw_get("roll").unwrap_or(0.0)
 			));
 		}
 		if let Ok(scale) = x.raw_get::<f32>("scale")
@@ -690,10 +617,71 @@ pub fn mesh(s: &Lua)
 		Ok(())
 	});
 
+	func(s, &t, "addTransform", |s, x: Table|
+	{
+		let ts = getEntity(s).getMesh().getTransformable();
+		if let Ok(pos) = x.raw_get::<Table>("pos")
+		{
+			let mut p = ts.getPosition();
+			p.x = pos.raw_get("x").unwrap_or(p.x);
+			p.y = pos.raw_get("y").unwrap_or(p.y);
+			p.z = pos.raw_get("z").unwrap_or(p.z);
+			ts.translate(p);
+		}
+		if let Ok(angle) = x.raw_get::<Table>("angle")
+		{
+			ts.getOrientation().add(glam::vec3(
+				angle.raw_get("yaw").unwrap_or(0.0),
+				angle.raw_get("pitch").unwrap_or(0.0),
+				angle.raw_get("roll").unwrap_or(0.0)
+			));
+		}
+		if let Ok(scale) = x.raw_get::<f32>("scale")
+		{
+			ts.scale(scale);
+		}
+		Ok(())
+	});
+
+	func(s, &t, "getTransform", |s, data: Table|
+	{
+		let ts = getEntity(s).getMesh().getTransformable();
+		let t = s.create_table().unwrap();
+		for x in data.pairs::<u8, String>()
+		{
+			if let Ok((_, var)) = x
+			{
+				if var == "pos"
+				{
+					let p = s.create_table().unwrap();
+					let pos = ts.getPosition();
+					let _ = p.raw_set("x", pos.x);
+					let _ = p.raw_set("y", pos.y);
+					let _ = p.raw_set("z", pos.z);
+					let _ = t.raw_set("pos", p);
+				}
+				if var == "angle"
+				{
+					let e = s.create_table().unwrap();
+					let angle = ts.getOrientation().getAngle();
+					let _ = e.raw_set("yaw", angle.x);
+					let _ = e.raw_set("pitch", angle.y);
+					let _ = e.raw_set("roll", angle.z);
+					let _ = t.raw_set("angle", e);
+				}
+				if var == "scale"
+				{
+					let _ = t.raw_set("scale", ts.getScale());
+				}
+			}
+		}
+		Ok(t)
+	});
+
 	let _ = t.set("load",
 	s.create_function(|s, p: (String, usize)|
 	{
-		let mesh = getMesh(s.globals().raw_get("ScriptID").unwrap());
+		let mesh = getEntity(s).getMesh();
 		let gltf = GLTF::load(p.0);
 		*mesh = Mesh::fromGLTF(&gltf, p.1);
 		Ok(())
@@ -702,9 +690,7 @@ pub fn mesh(s: &Lua)
 	let _ = t.set("draw",
 	s.create_function(|s, _: ()|
 	{
-		Window::getCamera().draw(
-			getMesh(s.globals().raw_get("ScriptID").unwrap())
-		);
+		Window::getCamera().draw(getEntity(s).getMesh());
 		Ok(())
 	}).unwrap());
 	
@@ -718,9 +704,7 @@ pub fn skeleton(script: &Lua)
 	let _ = t.set("setAnimation",
 	script.create_function(|s, anim: String|
 	{
-		let sk = getSkeleton(
-			s.globals().raw_get("ScriptID").unwrap()
-		);
+		let sk = getEntity(s).getSkeleton();
 		sk.setAnimation(anim);
 		Ok(())
 	}).unwrap());
@@ -728,9 +712,7 @@ pub fn skeleton(script: &Lua)
 	let _ = t.set("load",
 	script.create_function(|s, p: (String, usize)|
 	{
-		let sk = getSkeleton(
-			s.globals().raw_get("ScriptID").unwrap()
-		);
+		let sk = getEntity(s).getSkeleton();
 		let gltf = GLTF::load(p.0);
 		*sk = Skeleton::fromGLTF(&gltf, p.1);
 		Ok(())
@@ -739,7 +721,7 @@ pub fn skeleton(script: &Lua)
 	let _ = t.set("update",
 	script.create_function(|s, _: ()|
 	{
-		getSkeleton(s.globals().raw_get("ScriptID").unwrap()).update(
+		getEntity(s).getSkeleton().update(
 			Window::getCamera()
 		);
 		Ok(())
@@ -755,7 +737,18 @@ pub fn network(s: &Lua)
 	func(s, &t, "connect", |_, ip: String| Ok(Window::getNetwork().connect(ip)));
 	func(s, &t, "disconnect", |_, _: ()| { Window::getNetwork().reset(); Ok(()) });
 	func(s, &t, "isReady", |_, _: ()| Ok(Window::getNetwork().isReady()));
+	func(s, &t, "isActive", |_, _: ()| Ok(Window::getNetwork().isActive()));
 	func(s, &t, "id", |_, _: ()| Ok(Window::getNetwork().getID()));
+	func(s, &t, "discovered", |_, _: ()| { Ok(Window::getNetwork().discoveredIP()) });
+
+	func(s, &t, "search", |_, _: ()|
+	{
+		let _ = std::thread::Builder::new()
+			.name(String::from("Server Search"))
+			.spawn(|| crate::ae3d::Network::search());
+		Ok(())
+	});
+
 
 	func(s, &t, "send", |_, data: Table|
 	{
@@ -829,39 +822,29 @@ pub fn camera(s: &Lua)
 		Ok(())
 	});
 
-	func(s, &t, "setMode", |_, data: Table|
+	func(s, &t, "setDistance", |_, x: f32|
 	{
-		let ts = Window::getCamera().getTransformable();
-		if let Ok(_) = data.raw_get::<Table>("firstPerson")
-		{
-			ts.setRotationMode(super::Transformable::RotationMode::LookAtFP);
-		}
-		if let Ok(tp) = data.raw_get::<Table>("thirdPerson")
-		{
-			ts.setRotationMode(super::Transformable::RotationMode::LookAtTP(
-				tp.raw_get::<f32>("distance").unwrap_or(2.0)
-			));
-		}
+		Window::getCamera().setDistance(x);
 		Ok(())
 	});
 
 	func(s, &t, "setTransform", |_, x: Table|
 	{
-		let ts = Window::getCamera().getTransformable();
+		let c = Window::getCamera();
 		if let Ok(pos) = x.raw_get::<Table>("pos")
 		{
-			let p = ts.getPosition();
-			ts.setPosition(glam::vec3(
-				pos.raw_get("x").unwrap_or(p.x),
-				pos.raw_get("y").unwrap_or(p.y),
-				pos.raw_get("z").unwrap_or(p.z)
+			c.setPosition(glam::vec3(
+				pos.raw_get("x").unwrap_or(0.0),
+				pos.raw_get("y").unwrap_or(0.0),
+				pos.raw_get("z").unwrap_or(0.0)
 			));
 		}
 		if let Ok(angle) = x.raw_get::<Table>("angle")
 		{
-			ts.setRotation(glam::vec2(
+			c.setRotation(glam::vec3(
 				angle.raw_get("yaw").unwrap_or(0.0),
-				angle.raw_get("pitch").unwrap_or(0.0)
+				angle.raw_get("pitch").unwrap_or(0.0),
+				angle.raw_get("roll").unwrap_or(0.0)
 			));
 		}
 		Ok(())
@@ -869,34 +852,22 @@ pub fn camera(s: &Lua)
 
 	func(s, &t, "addTransform", |_, x: Table|
 	{
-		let ts = Window::getCamera().getTransformable();
+		let c = Window::getCamera();
 		if let Ok(pos) = x.raw_get::<Table>("translation")
 		{
-			ts.translate(glam::vec3(
+			c.translate(glam::vec3(
 				pos.raw_get("x").unwrap_or(0.0),
 				pos.raw_get("y").unwrap_or(0.0),
 				pos.raw_get("z").unwrap_or(0.0)
 			));
 		}
-		if let Ok(pos) = x.raw_get::<Table>("movement")
-		{
-			let d = ts.getFront();
-			let dx = pos.raw_get("x").unwrap_or(0.0);
-			let dy = pos.raw_get("y").unwrap_or(0.0);
-			let dz = pos.raw_get("z").unwrap_or(0.0);
-			ts.translate(glam::vec3(
-				d.x * dz - d.y * dx,
-				dy,
-				d.y * dz + d.x * dx
-			));
-		}
 		if let Ok(pos) = x.raw_get::<Table>("fly")
 		{
-			let d = ts.getDirection();
+			let d = c.getOrientation().getDirection();
 			let dx = pos.raw_get("x").unwrap_or(0.0);
 			let dy = pos.raw_get("y").unwrap_or(0.0);
 			let dz = pos.raw_get("z").unwrap_or(0.0);
-			ts.translate(glam::vec3(
+			c.translate(glam::vec3(
 				d.x * dz - d.z * dx,
 				d.y * dz + dy,
 				d.z * dz + d.x * dx
@@ -904,9 +875,10 @@ pub fn camera(s: &Lua)
 		}
 		if let Ok(angle) = x.raw_get::<Table>("angle")
 		{
-			ts.rotate(glam::vec2(
+			c.rotate(glam::vec3(
 				angle.raw_get("yaw").unwrap_or(0.0),
-				angle.raw_get("pitch").unwrap_or(0.0)
+				angle.raw_get("pitch").unwrap_or(0.0),
+				angle.raw_get("roll").unwrap_or(0.0)
 			));
 		}
 		Ok(())
@@ -915,7 +887,7 @@ pub fn camera(s: &Lua)
 	func(s, &t, "getTransform", |s, x: Table|
 	{
 		let out = s.create_table().unwrap();
-		let ts = Window::getCamera().getTransformable();
+		let c = Window::getCamera();
 		for i in x.pairs::<u8, String>()
 		{
 			if let Ok(i) = i
@@ -923,7 +895,7 @@ pub fn camera(s: &Lua)
 				if i.1 == "pos"
 				{
 					let p = s.create_table().unwrap();
-					let pos = ts.getPosition();
+					let pos = c.getPosition();
 					let _ = p.raw_set("x", pos.x);
 					let _ = p.raw_set("y", pos.y);
 					let _ = p.raw_set("z", pos.z);
@@ -932,15 +904,16 @@ pub fn camera(s: &Lua)
 				if i.1 == "angle"
 				{
 					let a = s.create_table().unwrap();
-					let angle = ts.getRotation();
+					let angle = c.getOrientation().getAngle();
 					let _ = a.raw_set("yaw", angle.x);
 					let _ = a.raw_set("pitch", angle.y);
+					let _ = a.raw_set("roll", angle.z);
 					let _ = out.raw_set("angle", a);
 				}
 				if i.1 == "direction"
 				{
 					let d = s.create_table().unwrap();
-					let dir = ts.getDirection();
+					let dir = c.getOrientation().getDirection();
 					let _ = d.raw_set("x", dir.x);
 					let _ = d.raw_set("y", dir.y);
 					let _ = d.raw_set("z", dir.z);

@@ -18,7 +18,8 @@ pub struct Network
 	id: u8,
 	tickRate: u8,
 	state: HashMap<u8, (glam::Vec3, glam::Vec2)>,
-	udpSock: SocketAddr
+	udpSock: SocketAddr,
+	tcpSock: SocketAddr
 }
 
 impl Network
@@ -36,7 +37,8 @@ impl Network
 			id: u8::MAX,
 			tickRate: 10,
 			state: HashMap::new(),
-			udpSock: "0.0.0.0:0".parse().unwrap()
+			udpSock: "0.0.0.0:0".parse().unwrap(),
+			tcpSock: "0.0.0.0:0".parse().unwrap()
 		}
 	}
 
@@ -54,6 +56,7 @@ impl Network
 		let addr = ip.parse();
 		if let Ok(addr) = addr
 		{
+			self.tcpSock = addr;
 			let tcp = TcpStream::connect(addr);
 			if let Ok(tcp) = tcp
 			{
@@ -72,6 +75,7 @@ impl Network
 	}
 
 	pub fn isReady(&self) -> bool { self.ready }
+	pub fn isActive(&self) -> bool { self.active }
 	pub fn getID(&self) -> u8 { self.id }
 
 	pub fn send(&mut self, msg: ToServer)
@@ -140,6 +144,25 @@ impl Network
 	{
 		self.state.insert(self.id, (pos, angle));
 	}
+
+	pub fn discoveredIP(&mut self) -> String
+	{
+		if !self.udpSequence.is_empty()
+		{
+			return format!(
+				"{}.{}.{}.{}:{}",
+				self.udpSequence.remove(0),
+				self.udpSequence.remove(0),
+				self.udpSequence.remove(0),
+				self.udpSequence.remove(0),
+				u16::from_be_bytes([
+					self.udpSequence.remove(0),
+					self.udpSequence.remove(0),
+				])
+			);
+		}
+		String::new()
+	}
 }
 
 fn update()
@@ -152,8 +175,7 @@ fn update()
 	let tickTime = Duration::from_secs_f32(1.0 / n.tickRate as f32);
 	let mut tickInstant = Instant::now();
 	let evTime = Duration::from_secs_f32(0.1 / n.tickRate as f32);
-	
-	let ip = n.tcp.as_mut().unwrap().peer_addr().unwrap();
+
 	let _ = poll.registry().register(
 		n.tcp.as_mut().unwrap(), Token(0),
 		Interest::WRITABLE
@@ -161,7 +183,7 @@ fn update()
 	
 	while n.active
 	{
-		if tickInstant.elapsed() >= tickTime
+		if tickInstant.elapsed() >= tickTime && n.ready
 		{
 			let s = n.state.get(&n.id).cloned().unwrap_or_default();
 			match n.udp.send_to(&[
@@ -194,7 +216,11 @@ fn update()
 						true => { tcpAttempt = u8::MAX; },
 						false => tcpAttempt += 1
 					};
-					if tcpAttempt == 5 { panic!("Failed to connect to {ip}"); }
+					if tcpAttempt == 5 { n.active = false; }
+					if tcpAttempt == u8::MAX
+					{
+						let _ = n.udp.set_broadcast(false);
+					}
 					continue;
 				}
 				
@@ -245,10 +271,9 @@ fn update()
 fn activate(n: &mut Network, reg: &Registry) -> bool
 {
 	let tcp = n.tcp.as_mut().unwrap();
-	let ip = tcp.peer_addr().unwrap();
 	if tcp.peer_addr().is_err()
 	{
-		if let Ok(socket) = TcpStream::connect(ip)
+		if let Ok(socket) = TcpStream::connect(n.tcpSock)
 		{
 			let _ = reg.deregister(tcp);
 			*tcp = socket;
@@ -263,5 +288,55 @@ fn activate(n: &mut Network, reg: &Registry) -> bool
 	let _ = reg.register(&mut n.udp, Token(1), Interest::READABLE);
 	n.ready = true;
 	n.send(ToServer::Setup(n.udp.local_addr().unwrap().port()));
+	n.udpSequence.clear();
 	true
+}
+
+pub fn search()
+{
+	let mut poll = Poll::new()
+		.expect("Failed to create socket selector");
+	let mut events = Events::with_capacity(16);
+
+	let mut udp = UdpSocket::bind(
+		"0.0.0.0:0".parse().unwrap()
+	).expect("Failed to create UDP socket");
+	udp.set_broadcast(true).expect("Failed to enable broadcast");
+
+	poll.registry().register(
+		&mut udp, Token(0),
+		Interest::READABLE
+	).expect("Failed to add UDP socket to registry");
+
+	let _ = udp.send_to(&[], "255.255.255.255:26225".parse().unwrap());
+	
+	'search: loop
+	{
+		let _ = poll.poll(
+			&mut events,
+			Some(Duration::from_secs(2))
+		);
+		
+		if events.is_empty() { break 'search; }
+		
+		let mut buf = [0u8; 2];
+		while let Ok((size, addr)) = udp.recv_from(&mut buf)
+		{
+			if size != 2 { continue; }
+			match addr.ip()
+			{
+				std::net::IpAddr::V4(a) =>
+				{
+					Window::getNetwork().udpSequence.append(&mut [
+						&a.octets() as &[u8],
+						&buf as &[u8]
+					].concat());
+				}
+				std::net::IpAddr::V6(_) =>
+				{
+					println!("Cannot use IPv6 yet.")
+				}
+			}
+		}
+	}
 }

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ae3d::Transformable::Transformable3D;
+use crate::ae3d::Transformable::Orientation;
 
 use super::Window::Window;
 
@@ -19,7 +19,12 @@ pub struct Camera
 	fov: f32,
 	proj: glam::Mat4,
 	scaler: i32,
-	ts: Transformable3D
+
+	orientation: Orientation,
+	distance: f32,
+	pos: glam::Vec3,
+	view: glam::Mat4,
+	updateView: bool
 }
 
 impl Camera
@@ -36,7 +41,11 @@ impl Camera
 			fov: 90.0,
 			proj: glam::Mat4::IDENTITY,
 			scaler: 1,
-			ts: Transformable3D::new()
+			orientation: Orientation::default(),
+			distance: 0.0,
+			pos: glam::Vec3::ZERO,
+			view: glam::Mat4::IDENTITY,
+			updateView: false
 		}
 	}
 
@@ -130,9 +139,18 @@ impl Camera
 
 	pub fn draw(&mut self, obj: &mut impl Drawable)
 	{
-		let m = self.ts.getMatrix();
+		if self.updateView
+		{
+			self.updateView = false;
+			let d = self.orientation.getDirection();
+			self.view = glam::Mat4::look_at_rh(
+				self.pos - d * self.distance,
+				self.pos + d * (if self.distance == 0.0 { 1.0 } else { 0.0 }),
+				glam::Vec3::Y
+			);
+		}
 		self.shaderMat4("worldProj", self.proj);
-		self.shaderMat4("view", m);
+		self.shaderMat4("view", self.view);
 		obj.draw(self);
 	}
 
@@ -141,11 +159,6 @@ impl Camera
 		if self.currentVAO == vao { return; }
 		self.currentVAO = vao;
 		unsafe { gl::BindVertexArray(vao); }
-	}
-
-	pub fn getTransformable(&mut self) -> &mut Transformable3D
-	{
-		&mut self.ts
 	}
 
 	pub fn setFOV(&mut self, fov: f32)
@@ -163,6 +176,42 @@ impl Camera
 	}
 
 	pub fn getScaler(&self) -> i32 { self.scaler }
+
+	pub fn setDistance(&mut self, dist: f32)
+	{
+		self.distance = dist;
+		self.updateView = true;
+	}
+
+	pub fn getDistance(&self) -> f32 { self.distance }
+
+	pub fn setPosition(&mut self, pos: glam::Vec3)
+	{
+		self.pos = pos;
+		self.updateView = true;
+	}
+
+	pub fn translate(&mut self, pos: glam::Vec3)
+	{
+		self.pos += pos;
+		self.updateView = true;
+	}
+
+	pub fn getPosition(&self) -> glam::Vec3 { self.pos }
+
+	pub fn setRotation(&mut self, angle: glam::Vec3)
+	{
+		self.orientation.set(angle);
+		self.updateView = true;
+	}
+
+	pub fn rotate(&mut self, angle: glam::Vec3)
+	{
+		self.orientation.add(angle);
+		self.updateView = true;
+	}
+
+	pub fn getOrientation(&self) -> &Orientation { &self.orientation }
 
 	pub fn setup(&mut self)
 	{

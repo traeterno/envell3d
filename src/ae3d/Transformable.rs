@@ -64,27 +64,16 @@ impl Transformable2D
 	}
 }
 
-#[derive(Default, Debug, Clone, PartialEq)]
-pub enum RotationMode
-{
-	#[default] Euler,
-	LookAtFP,
-	LookAtTP(f32)
-}
-
 #[derive(Default, Debug, Clone)]
 pub struct Transformable3D
 {
 	position: glam::Vec3,
-	direction: glam::Vec3,
-	front: glam::Vec2,
-	angle: glam::Vec2,
+	orientation: Orientation,
+	scale: f32,
 
 	model: glam::Mat4,
 	invTrans: glam::Mat4,
-	reloadModel: bool,
-	rotationMode: RotationMode,
-	scale: f32
+	reloadModel: bool
 }
 
 impl Transformable3D
@@ -94,54 +83,23 @@ impl Transformable3D
 		Self
 		{
 			position: glam::Vec3::ZERO,
-			direction: glam::Vec3::Z,
-			front: glam::Vec2::Y,
-			angle: glam::Vec2::ZERO,
+			orientation: Orientation::default(),
+			scale: 1.0,
 			
 			model: glam::Mat4::IDENTITY,
 			invTrans: glam::Mat4::IDENTITY,
-			reloadModel: true,
-			rotationMode: RotationMode::Euler,
-			scale: 1.0
+			reloadModel: true
 		}
 	}
 
 	fn update(&mut self)
 	{
-		self.model = match self.rotationMode
-		{
-			RotationMode::Euler =>
-			{
-				glam::Mat4::from_translation(self.position) *
-				glam::Mat4::from_rotation_x(self.angle.y.to_radians()) *
-				glam::Mat4::from_rotation_y(self.angle.x.to_radians()) *
-				glam::Mat4::from_scale(glam::Vec3::splat(self.scale))
-			}
-			RotationMode::LookAtFP =>
-			{
-				glam::Mat4::look_at_rh(
-					self.position,
-					self.position + self.direction,
-					glam::Vec3::Y
-				)
-			}
-			RotationMode::LookAtTP(dist) =>
-			{
-				glam::Mat4::look_at_rh(
-					self.position - self.direction * dist,
-					self.position,
-					glam::Vec3::Y
-				)
-			}
-		};
+		self.model =
+			glam::Mat4::from_translation(self.position) *
+			self.orientation.getMatrix() *
+			glam::Mat4::from_scale(glam::Vec3::splat(self.scale));
 		
 		self.invTrans = self.model.inverse().transpose();
-	}
-
-	pub fn setRotationMode(&mut self, mode: RotationMode)
-	{
-		self.rotationMode = mode;
-		self.reloadModel = true;
 	}
 
 	pub fn getMatrix(&mut self) -> glam::Mat4
@@ -168,40 +126,88 @@ impl Transformable3D
 	}
 	pub fn getPosition(&self) -> glam::Vec3 { self.position }
 
-	pub fn setRotation(&mut self, angle: glam::Vec2)
+	pub fn getOrientation(&mut self) -> &mut Orientation
 	{
-		self.angle.x = angle.x % 360.0;
-		if self.rotationMode != RotationMode::Euler
-		{
-			self.angle.y = angle.y.clamp(-89.0, 89.0);
-		}
-		else { self.angle.y = angle.y; }
-		let yaw = self.angle.x.to_radians();
-		let pitch = self.angle.y.to_radians();
-
-		self.front = glam::vec2(yaw.cos(), yaw.sin());
-
-		self.direction = glam::vec3(
-			self.front.x * pitch.cos(),
-			pitch.sin(),
-			self.front.y * pitch.cos()
-		);
-
-		self.reloadModel = true;
+		&mut self.orientation
 	}
-
-	pub fn rotate(&mut self, angle: glam::Vec2)
-	{
-		self.setRotation(self.angle + angle);
-	}
-
-	pub fn getDirection(&self) -> glam::Vec3 { self.direction }
-	pub fn getFront(&self) -> glam::Vec2 { self.front }
-	pub fn getRotation(&self) -> glam::Vec2 { self.angle }
 
 	pub fn setScale(&mut self, scale: f32)
 	{
 		self.scale = scale;
 		self.reloadModel = true;
 	}
+
+	pub fn scale(&mut self, factor: f32)
+	{
+		self.scale *= factor;
+		self.reloadModel = true;
+	}
+
+	pub fn getScale(&self) -> f32 { self.scale }
+}
+
+#[derive(Debug, Clone)]
+pub struct Orientation
+{
+	quat: glam::Quat,
+	angle: glam::Vec3,
+	direction: glam::Vec3,
+	right: glam::Vec3,
+	up: glam::Vec3,
+	model: glam::Mat4,
+	reload: bool
+}
+
+impl Default for Orientation
+{
+	fn default() -> Self
+	{
+		Self
+		{
+			quat: glam::Quat::IDENTITY,
+			angle: glam::Vec3::ZERO,
+			direction: glam::Vec3::Z,
+			right: glam::Vec3::X,
+			up: glam::Vec3::Y,
+			model: glam::Mat4::IDENTITY,
+			reload: false
+		}
+	}
+}
+
+impl Orientation
+{
+	pub fn set(&mut self, angle: glam::Vec3)
+	{
+		self.angle = angle;
+		self.quat = glam::Quat::from_rotation_y(angle.x.to_radians());
+		self.right = self.quat.mul_vec3(glam::Vec3::X);
+		let pitch = glam::Quat::from_axis_angle(self.right, angle.y.to_radians());
+		self.quat = pitch * self.quat;
+		self.direction = self.quat.mul_vec3(glam::Vec3::Z);
+		let roll = glam::Quat::from_axis_angle(self.direction, angle.z.to_radians());
+		self.quat = roll * self.quat;
+		self.reload = true;
+	}
+
+	pub fn add(&mut self, angle: glam::Vec3)
+	{
+		self.set(self.angle + angle);
+	}
+
+	pub fn getMatrix(&mut self) -> glam::Mat4
+	{
+		if self.reload
+		{
+			self.model = glam::Mat4::from_quat(self.quat);
+			self.reload = false;
+		}
+
+		self.model
+	}
+
+	pub fn getAngle(&self) -> glam::Vec3 { self.angle }
+	pub fn getDirection(&self) -> glam::Vec3 { self.direction }
+	pub fn getRight(&self) -> glam::Vec3 { self.right }
+	pub fn getUp(&self) -> glam::Vec3 { self.up }
 }

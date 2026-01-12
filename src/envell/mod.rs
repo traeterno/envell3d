@@ -54,7 +54,7 @@ pub fn main()
 	}
 	else { println!("Configuration found."); }
 
-	let state = state::load("res/system/save.json");
+	let mut state = state::load("res/system/save.json");
 
 	let (
 		mut toWeb,
@@ -66,7 +66,7 @@ pub fn main()
 		mut fromSession
 	) = launchSession();
 
-	let _ = toSession.send((0, player::Resp::UpdateConfig(cfg.clone())));
+	let _ = toSession.send((0, player::Resp::UpdateConfig(usize::MAX, cfg.clone())));
 
 	let mut chat: Vec<(String, String)> = vec![];
 
@@ -121,7 +121,7 @@ pub fn main()
 								1.0 / cfg.sysTickRate as f32
 							);
 							let _ = toSession.send(
-								(0, player::Resp::UpdateConfig(cfg.clone()))
+								(0, player::Resp::UpdateConfig(id, cfg.clone()))
 							);
 							let _ = toWeb.send(
 								(id, web::Resp::Modal("saveSettings-success".to_string()))
@@ -134,6 +134,24 @@ pub fn main()
 								"saveSettings-success" => { println!("Settings saved."); }
 								"saveSettings-fail" => { println!("Failed to save settings."); }
 								x => { println!("New modal:\n{x}: {result:#}") }
+							}
+						}
+						web::Req::Buttons =>
+						{
+							let _ = toWeb.send((id, web::Resp::Buttons(vec![
+								(String::from("setVisible"), String::from("Открыть врата")),
+								(String::from("setInvisible"), String::from("Закрыть врата"))
+							])));
+						}
+						web::Req::ClickButton(btn) =>
+						{
+							if btn == "setVisible"
+							{
+								let _ = toSession.send((0, player::Resp::SetVisible(id, true)));
+							}
+							if btn == "setInvisible"
+							{
+								let _ = toSession.send((0, player::Resp::SetVisible(id, false)));
 							}
 						}
 					}
@@ -158,7 +176,7 @@ pub fn main()
 		{
 			match fromSession.try_recv()
 			{
-				Ok((id, req)) =>
+				Ok((_, req)) =>
 				{
 					match req
 					{
@@ -166,7 +184,18 @@ pub fn main()
 						{
 							cfg.locked = active;
 						}
-						_ => println!("{id}: {req:?}")
+						player::Req::ShowModal(web, id) =>
+						{
+							let _ = toWeb.send((
+								web,
+								web::Resp::Modal(id)
+							));
+						}
+						player::Req::SetVisible(active) =>
+						{
+							state.visible = active;
+							let _ = toWeb.send((0, web::Resp::State(state.clone())));
+						}
 					}
 				}
 				Err(x) =>
@@ -179,7 +208,7 @@ pub fn main()
 							println!("Player session channel has disconnected. Reloading...");
 							(toSession, fromSession) = launchSession();
 							let _ = toSession.send(
-								(0, player::Resp::UpdateConfig(cfg.clone()))
+								(0, player::Resp::UpdateConfig(usize::MAX, cfg.clone()))
 							);
 						}
 					}
@@ -190,7 +219,10 @@ pub fn main()
 
 		if timer.elapsed() < sysTimer
 		{
-			std::thread::sleep(sysTimer - timer.elapsed());
+			if let Some(x) = sysTimer.checked_sub(timer.elapsed())
+			{
+				std::thread::sleep(x);
+			}
 		}
 	}
 }

@@ -20,7 +20,9 @@ pub enum Req
 	State,
 	GetSettings,
 	SaveSettings(json::JsonValue),
-	Modal(String, json::JsonValue)
+	Modal(String, json::JsonValue),
+	Buttons,
+	ClickButton(String)
 }
 
 pub type Request = (usize, Req);
@@ -31,7 +33,8 @@ pub enum Resp
 	NewMessage(String, String),
 	State(State),
 	GetSettings(Config),
-	Modal(String)
+	Modal(String),
+	Buttons(Vec<(String, String)>)
 }
 
 pub type Response = (usize, Resp);
@@ -75,6 +78,16 @@ pub fn main(
 						if *m == ClientMode::WebSocket
 						{
 							sendWS(c, Resp::NewMessage(user.clone(), msg.clone()));
+						}
+					}
+				}
+				Resp::State(state) =>
+				{
+					for (_, (m, c)) in &mut clients
+					{
+						if *m == ClientMode::WebSocket
+						{
+							sendWS(c, Resp::State(state.clone()));
 						}
 					}
 				}
@@ -203,6 +216,12 @@ fn sendWS(tcp: &mut TcpStream, msg: Resp)
 						"Чекпоинт": state.checkpoint.clone(),
 						"Дата сохранения": state.date.clone()
 					}
+				},
+				{
+					title: "Система",
+					props: {
+						"Врата открыты": if state.visible { "Да" } else { "Нет" }
+					}
 				}
 			];
 		}
@@ -232,6 +251,18 @@ fn sendWS(tcp: &mut TcpStream, msg: Resp)
 					let _ = x.insert("id", id);
 					obj = x;
 				}
+			}
+		}
+		Resp::Buttons(btns) =>
+		{
+			topic = "buttons";
+			obj = json::array![];
+			for (id, title) in btns
+			{
+				let _ = obj.push(json::object!{
+					id: id.clone(),
+					title: title.clone()
+				});
 			}
 		}
 	}
@@ -279,6 +310,12 @@ fn handleWS(
 			let _ = toMain.send((id,  Req::Modal(
 				data["id"].as_str().unwrap_or("").to_string(),
 				data["result"].clone()
+			)));
+		}
+		"clickButton" =>
+		{
+			let _ = toMain.send((id, Req::ClickButton(
+				data.as_str().unwrap_or("").to_string()
 			)));
 		}
 		x =>
@@ -373,6 +410,7 @@ fn setupWS(
 
 	let _ = toMain.send((id, Req::State));
 	let _ = toMain.send((id, Req::GetSettings));
+	let _ = toMain.send((id, Req::Buttons));
 	
 	true
 }

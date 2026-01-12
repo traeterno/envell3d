@@ -40,92 +40,63 @@ impl Object
 		bind::world(&obj.script);
 		bind::network(&obj.script);
 		bind::profiler(&obj.script);
-
-		let mut f = None;
-
-		for (var, value) in node.entries()
+		
+		obj.name = node["name"].as_str().unwrap_or("???").to_string();
+		obj.spr =
+			if let Some(x) = node["image"].as_str()
+			{
+				Sprite::image(x.to_string())
+			}
+			else if let Some(x) = node["anim"].as_str()
+			{
+				Sprite::animated(x.to_string())
+			}
+			else { Sprite::default() };
+		
+		if let Some(x) = node["text"]["font"].as_str()
 		{
-			if var == "name"
-			{
-				obj.name = value.as_str().unwrap().to_string()
-			}
-			if var == "script"
-			{
-				f = Some(obj.script.load(
-					std::fs::read_to_string(
-						value.as_str().unwrap()
-					).unwrap_or(String::new())
-				));
-			}
-			if var == "image"
-			{
-				obj.spr = Sprite::image(
-					value.as_str().unwrap().to_string()
-				);
-			}
-			if var == "anim"
-			{
-				obj.spr = Sprite::animated(
-					value.as_str().unwrap().to_string()
-				);
-			}
-			if var == "text"
-			{
-				for (x, y) in value.entries()
-				{
-					if x == "font"
-					{
-						obj.text.setFont(
-							y.as_str().unwrap().to_string()
-						);
-					}
-					if x == "size"
-					{
-						obj.text.setSize(
-							y.as_f32().unwrap()
-						);
-					}
-					if x == "text"
-					{
-						obj.text.setString(
-							y.as_str().unwrap().to_string()
-						);
-					}
-				}
-			}
-			if var == "vars"
-			{
-				let t = obj.script.create_table().unwrap();
-				for (x, y) in value.entries()
-				{
-					match y.as_f32()
-					{
-						Some(v) =>
-						{
-							let _ = t.raw_set(x, v);
-						}
-						None =>
-						{
-							let _ = t.raw_set(
-								x, y.as_str().unwrap()
-							);
-						}
-					};
-				}
-				let _ = obj.script.globals().set("vars", t);
-			}
+			obj.text.setFont(x.to_string());
+		}
+		if let Some(x) = node["text"]["size"].as_f32()
+		{
+			obj.text.setSize(x);
+		}
+		if let Some(x) = node["text"]["text"].as_str()
+		{
+			obj.text.setString(x.to_string());
 		}
 
-		if let Some(func) = f
+		let t = obj.script.create_table().unwrap();
+		for (var, value) in node["vars"].entries()
+		{
+			match value.as_f32()
+			{
+				Some(v) =>
+				{
+					let _ = t.raw_set(var, v);
+				}
+				None =>
+				{
+					let _ = t.raw_set(
+						var, value.as_str().unwrap()
+					);
+				}
+			};
+		}
+		let _ = obj.script.globals().set("vars", t);
+		
+		if let Ok(s) = std::fs::read_to_string(
+			node["script"].as_str().unwrap_or("")
+		)
 		{
 			let _ = obj.script.load_std_libs(mlua::StdLib::ALL_SAFE);
-			let _ = obj.script.globals().set(
+			let _ = obj.script.globals().raw_set(
 				"ScriptID",
-				String::from("ui_") + &obj.name
+				format!("ui_{}", obj.name)
 			);
-			let _ = func.exec();
+			let _ = obj.script.load(s).exec();
 		}
-
+		
 		obj
 	}
 
@@ -183,15 +154,9 @@ impl UI
 
 		self.objects.clear();
 
-		for (name, value) in src.entries()
+		for value in src.members()
 		{
-			let id: usize = name.parse().expect(&format!("Wrong UI object ID: {name}"));
-			if id + 1 > self.objects.len()
-			{
-				self.objects.resize_with(id + 1, || Object::new());
-			}
-
-			self.objects[id] = Object::parse(value);
+			self.objects.push(Object::parse(value));
 		}
 
 		for obj in &self.objects

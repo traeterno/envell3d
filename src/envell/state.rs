@@ -30,7 +30,8 @@ pub struct State
 {
 	pub date: String,
 	pub checkpoint: String,
-	pub players: Players
+	pub players: Players,
+	pub visible: bool
 }
 
 impl State

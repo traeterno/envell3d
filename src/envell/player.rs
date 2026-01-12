@@ -3,13 +3,12 @@ use std::{collections::HashMap, io::{Read, Write}, time::{Duration, Instant}};
 
 use mio::{Events, Interest, Poll, Token, net::{TcpListener, TcpStream, UdpSocket}};
 
-use crate::envell::{config::Config, message::{self, ToClient}, state::Account};
+use crate::envell::{config::Config, message::{self, ToClient}};
 
 struct Player
 {
 	tcp: TcpStream,
 	ip: String,
-	info: Account,
 	udpPort: u16,
 	state: [u8; 9] // TODO rewrite
 }
@@ -27,16 +26,16 @@ type Party = HashMap<u8, Player>;
 #[derive(Debug)]
 pub enum Req
 {
-	GetPlayerInfo(String, u8),
-	Login(String),
-	UnlockSettings(bool)
+	UnlockSettings(bool),
+	ShowModal(usize, String),
+	SetVisible(bool)
 }
 
 #[derive(Debug)]
 pub enum Resp
 {
-	PlayerInfo(u8, Account),
-	UpdateConfig(Config)
+	UpdateConfig(usize, Config),
+	SetVisible(usize, bool)
 }
 
 pub type Request = (u8, Req);
@@ -52,7 +51,7 @@ pub fn main(
 	{
 		match resp
 		{
-			Resp::UpdateConfig(cfg) => { config = cfg; break }
+			Resp::UpdateConfig(_, cfg) => { config = cfg; break }
 			_ => {}
 		}
 	}
@@ -62,13 +61,21 @@ pub fn main(
 	let mut events = Events::with_capacity(64);
 	let mut players = Party::new();
 
-	let mut listener = TcpListener::bind(
+	let mut listener;
+	if let Ok(tcp) = TcpListener::bind(
 		format!("0.0.0.0:{}", config.port).parse().unwrap()
-	).expect(&format!("Failed to bind listener to port {}", config.port));
+	) { listener = tcp; }
+	else if let Ok(tcp) = TcpListener::bind(
+		"0.0.0.0:0".parse().unwrap()
+	)
+	{ listener = tcp; config.port = listener.local_addr().unwrap().port(); }
+	else { panic!("Failed to create TCP listener at any port."); }
 
 	let mut udp = UdpSocket::bind(
 		"0.0.0.0:0".parse().unwrap()
 	).expect("Failed to create UDP socket");
+
+	let mut broadcast: Option<(UdpSocket, Instant)> = None;
 
 	println!("TCP: {} | UDP: {}",
 		listener.local_addr().unwrap(),
@@ -90,12 +97,20 @@ pub fn main(
 
 	loop
 	{
-		while let Ok((_, resp)) = fromMain.try_recv()
+		while let Ok((id, resp)) = fromMain.try_recv()
 		{
 			match resp
 			{
-				Resp::UpdateConfig(cfg) =>
+				Resp::UpdateConfig(web, cfg) =>
 				{
+					if !players.is_empty()
+					{
+						let _ = toMain.send((
+							id,
+							Req::ShowModal(web, String::from("saveSettings-fail"))
+						));
+						continue;
+					}
 					println!("Player session: Config updated.");
 					config = cfg;
 
@@ -103,10 +118,71 @@ pub fn main(
 						&mut listener, Token(config.playersCount as usize),
 						Interest::READABLE
 					);
+					let _ = poll.registry().reregister(
+						&mut udp, Token(config.playersCount as usize + 1),
+						Interest::READABLE
+					);
+
+					let _ = toMain.send((
+						id,
+						Req::ShowModal(web, String::from("saveSettings-success"))
+					));
 				}
-				Resp::PlayerInfo(id, acc) =>
+				Resp::SetVisible(web, active) =>
 				{
-					// 
+					if !active
+					{
+						if let Some((s, _)) = broadcast.as_mut()
+						{
+							let _ = poll.registry().deregister(s);
+							broadcast = None;
+							println!("Broadcast shut down.");
+							let _ = toMain.send((
+								id, Req::ShowModal(web, String::from("setInvisible-success"))
+							));
+							let _ = toMain.send((0, Req::SetVisible(false)));
+						}
+						else
+						{
+							println!("Broadcast is already off.");
+							let _ = toMain.send((
+								id, Req::ShowModal(web, String::from("setInvisible-fail"))
+							));
+						}
+						continue;
+					}
+					if broadcast.is_some()
+					{
+						println!("Broadcast is already active.");
+						let _ = toMain.send((
+							id, Req::ShowModal(web, String::from("setVisible-repeat"))
+						));
+						continue;
+					}
+					if let Ok(mut s) =
+						UdpSocket::bind("0.0.0.0:26225".parse().unwrap())
+					{
+						if let Err(x) = s.set_broadcast(true)
+						{
+							println!("Cannot start broadcast: {x:?}");
+							let _ = toMain.send((
+								id,
+								Req::ShowModal(web, String::from("setVisible-fail"))
+							));
+							continue;
+						}
+						let _ = poll.registry().register(
+							&mut s, Token(config.playersCount as usize + 2),
+							Interest::READABLE
+						);
+						broadcast = Some((s, Instant::now()));
+						println!("Broadcast started.");
+						let _ = toMain.send((
+							id,
+							Req::ShowModal(web, String::from("setVisible-success"))
+						));
+						let _ = toMain.send((0, Req::SetVisible(true)));
+					}
 				}
 			}
 		}
@@ -125,6 +201,17 @@ pub fn main(
 				}
 			}
 			tickTimer = Instant::now();
+		}
+
+		if let Some((s, t)) = broadcast.as_mut()
+		{
+			if t.elapsed().as_secs() > 60
+			{
+				println!("Broadcast time is out.");
+				let _ = poll.registry().deregister(s);
+				let _ = toMain.send((0, Req::SetVisible(false)));
+				broadcast = None;
+			}
 		}
 
 		let _ = poll.poll(&mut events,
@@ -154,7 +241,6 @@ pub fn main(
 					{
 						tcp: tcp,
 						ip: ip.clone(),
-						info: Account::default(),
 						udpPort: 0,
 						state: [0u8; 9]
 					});
@@ -198,6 +284,25 @@ pub fn main(
 					}
 				}
 				continue;
+			}
+			if socketID == config.playersCount + 2
+			{
+				if let Some((s, _)) = broadcast.as_mut()
+				{
+					let mut buf = [0u8; 2];
+					while let Ok((size, addr)) = s.recv_from(&mut buf)
+					{
+						if size == 0
+						{
+							println!("Found searcher: {addr}");
+							let _ = s.send_to(
+								&config.port.to_be_bytes() as &[u8],
+								addr
+							);
+						}
+					}
+					continue;
+				}
 			}
 
 			let player = players.get_mut(&socketID).unwrap();
