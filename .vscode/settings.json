@@ -1,0 +1,16 @@
+{
+	"Lua.diagnostics.globals": [
+		"mesh",
+		"skeleton",
+		"network",
+		"camera",
+		"window",
+		"shaders",
+		"world",
+		"aemath",
+		"profiler",
+		"text",
+		"vars",
+		"ScriptID"
+	]
+}

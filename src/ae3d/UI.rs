@@ -40,6 +40,7 @@ impl Object
 		bind::world(&obj.script);
 		bind::network(&obj.script);
 		bind::profiler(&obj.script);
+		bind::math(&obj.script);
 		
 		obj.name = node["name"].as_str().unwrap_or("???").to_string();
 		obj.spr =

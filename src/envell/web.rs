@@ -449,3 +449,27 @@ fn receiveWS(buf: &[u8]) -> Option<(String, json::JsonValue)>
 	let (msg, data) = msg.entries().nth(0).unwrap();
 	Some((msg.to_string(), data.to_owned()))
 }
+
+/*
+key "players"
+pub fn jsonPlayers(&self) -> json::JsonValue
+{
+	let p = Server::getPlayers();
+	let mut arr = json::array![];
+	for i in 1..=5
+	{
+		for (id, c) in p
+		{
+			if *id != i || c.info.name == "noname" { continue; }
+			let _ = arr.push(json::object!{
+				id: *id,
+				name: c.info.name.clone(),
+				className: c.info.class.clone(),
+				hp: { current: c.info.hp, max: 100 },
+				mana: { current: 100, max: 100 }
+			});
+		}
+	}
+	arr
+}
+*/

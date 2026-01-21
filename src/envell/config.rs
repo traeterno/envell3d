@@ -7,7 +7,8 @@ pub struct Config
 	pub port: u16,
 	pub playersCount: u8,
 	pub sysTickRate: u16,
-	pub locked: bool
+	pub locked: bool,
+	pub password: String
 }
 
 impl Default for Config
@@ -22,7 +23,8 @@ impl Default for Config
 			port: 26225,
 			playersCount: 5,
 			sysTickRate: 100,
-			locked: false
+			locked: false,
+			password: String::from("tr_aeterno")
 		}
 	}
 }
@@ -50,6 +52,7 @@ pub fn load(path: &str) -> Config
 			c.port = cfg["port"].as_u16().unwrap_or(26225);
 			c.tickRate = cfg["tickRate"].as_u8().unwrap_or(10);
 			c.sysTickRate = cfg["sysTickRate"].as_u16().unwrap_or(100);
+			c.password = cfg["password"].as_str().unwrap_or("tr_aeterno").to_string();
 		}
 	}
 	c
@@ -63,6 +66,7 @@ pub fn save(cfg: &Config, path: &str)
 		playersCount: cfg.playersCount,
 		port: cfg.port,
 		tickRate: cfg.tickRate,
+		password: cfg.password.clone()
 	}));
 }
 

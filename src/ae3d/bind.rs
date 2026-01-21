@@ -439,6 +439,16 @@ pub fn window(script: &Lua)
 		Ok(())
 	}).unwrap());
 
+	func(script, &table, "resetCursor", |_, _: ()|
+	{
+		let m = Window::getInstance()
+			.window.as_ref().unwrap().get_cursor_pos();
+		let s = Window::getSize();
+		let c = (s.0 as f32 * 0.5, s.1 as f32 * 0.5);
+		Window::setMousePos(glam::vec2(c.0, c.1));
+		Ok((m.0 as f32 - c.0, m.1 as f32 - c.1))
+	});
+
 	let _ = script.globals().raw_set("window", table);
 }
 
@@ -456,20 +466,6 @@ pub fn world(script: &Lua)
 	script.create_function(|_, path: String|
 	{
 		Window::getWorld().load(path);
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("reset",
-	script.create_function(|_, _: ()|
-	{
-		*Window::getWorld() = World::init();
-		Ok(())
-	}).unwrap());
-
-	let _ = t.raw_set("parse",
-	script.create_function(|_, x: (String, String)|
-	{
-		Window::getWorld().parse(x.0, x.1);
 		Ok(())
 	}).unwrap());
 
@@ -925,4 +921,101 @@ pub fn camera(s: &Lua)
 	});
 
 	let _ = s.globals().raw_set("camera", t);
+}
+
+// TODO
+pub fn math(s: &Lua)
+{
+	let t = s.create_table().unwrap();
+	
+	func(s, &t, "clamp", |_, x: (f32, f32, f32)|
+	{
+		Ok(x.0.clamp(x.1, x.2))
+	});
+
+	func(s, &t, "rectContains", |_,  x: (Table, Table)|
+	{
+		let p = glam::vec2(
+			x.0.raw_get("x").unwrap_or(0.0),
+			x.0.raw_get("y").unwrap_or(0.0)
+		);
+		let r = glam::vec4(
+			x.1.raw_get("x").unwrap_or(0.0),
+			x.1.raw_get("y").unwrap_or(0.0),
+			x.1.raw_get("w").unwrap_or(0.0),
+			x.1.raw_get("h").unwrap_or(0.0)
+		);
+		Ok(
+			p.x == p.x.clamp(r.x, r.x + r.z) &&
+			p.y == p.y.clamp(r.y, r.y + r.w)
+		)
+	});
+
+	func(s, &t, "rectIntersects", |_, i: (Table, Table)|
+	{
+		let r1 = glam::vec4(
+			i.0.raw_get("x").unwrap_or(0.0),
+			i.0.raw_get("y").unwrap_or(0.0),
+			i.0.raw_get("z").unwrap_or(0.0),
+			i.0.raw_get("w").unwrap_or(0.0),
+		);
+		let r2 = glam::vec4(
+			i.1.raw_get("x").unwrap_or(0.0),
+			i.1.raw_get("y").unwrap_or(0.0),
+			i.1.raw_get("z").unwrap_or(0.0),
+			i.1.raw_get("w").unwrap_or(0.0),
+		);
+		let il = r1.x.max(r2.x);
+		let it = r1.y.max(r2.y);
+		let ir = (r1.x + r1.z).min(r2.x + r2.z);
+		let ib = (r1.y + r1.w).min(r2.y + r2.w);
+		Ok((il < ir) && (it < ib))
+	});
+
+	func(s, &t, "lerp", |_, x: (f32, f32, f32)|
+	{
+		let a = x.0; let b = x.1; let t = x.2;
+		Ok(a * (1.0 - t) + b * t)
+	});
+
+	func(s, &t, "cubicIn", |_, x: f32|
+	{
+		Ok(x.powi(3))
+	});
+
+	func(s, &t, "cubicOut", |_, x: f32|
+	{
+		Ok(1.0 - (1.0 - x).powi(3))
+	});
+
+	func(s, &t, "cubicInOut", |_, x: f32|
+	{
+		Ok(
+			if x < 0.5 { 4.0 * x.powi(3) }
+			else { 1.0 - (-2.0 * x + 2.0).powi(3) * 0.5 }
+		)
+	});
+
+	func(s, &t, "sineIn", |_, x: f32|
+	{
+		Ok(1.0 - (x * std::f32::consts::PI).cos() * 0.5)
+	});
+
+	func(s, &t, "sineOut", |_, x: f32|
+	{
+		Ok((x * std::f32::consts::PI * 0.5).sin())
+	});
+
+	func(s, &t, "sineInOut", |_, x: f32|
+	{
+		Ok(-((x * std::f32::consts::PI).cos() - 1.0) * 0.5)
+	});
+
+	func(s, &t, "round", |_, x: (f32, u8)|
+	{
+		let factor = 10.0_f32.powi(x.1 as i32);
+		Ok((x.0 * factor).round() / factor)
+	});
+
+	let _ = s.globals().raw_set("aemath", t);
 }

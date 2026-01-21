@@ -53,6 +53,7 @@ impl World
 		bind::world(&self.script);
 		bind::shaders(&self.script);
 		bind::camera(&self.script);
+		bind::math(&self.script);
 	}
 
 	pub fn update(&mut self)

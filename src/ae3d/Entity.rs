@@ -34,6 +34,7 @@ impl Entity
 		bind::mesh(&ent.script);
 		bind::skeleton(&ent.script);
 		bind::camera(&ent.script);
+		bind::math(&ent.script);
 
 		let _ = ent.script.load(
 			std::fs::read_to_string(

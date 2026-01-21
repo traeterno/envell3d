@@ -180,6 +180,8 @@ impl Orientation
 	pub fn set(&mut self, angle: glam::Vec3)
 	{
 		self.angle = angle;
+		self.angle.x = self.angle.x % 360.0;
+		self.angle.y = self.angle.y % 360.0;
 		self.quat = glam::Quat::from_rotation_y(angle.x.to_radians());
 		self.right = self.quat.mul_vec3(glam::Vec3::X);
 		let pitch = glam::Quat::from_axis_angle(self.right, angle.y.to_radians());

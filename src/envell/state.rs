@@ -6,7 +6,7 @@ pub struct Account
 	name: String,
 	class: String,
 	color: (u8, u8, u8),
-	inventory: Vec<(String, u8)>
+	inventory: Vec<(String, u8)>,
 }
 
 impl Default for Account

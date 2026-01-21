@@ -132,6 +132,7 @@ impl Network
 		self.tickRate = tickRate;
 		let ip = self.tcp.as_ref().unwrap().peer_addr().unwrap().ip().to_string();
 		self.udpSock = format!("{ip}:{port}").parse().unwrap();
+		self.ready = true;
 		println!("Network is set up: {tickRate}|{port}|{id}");
 	}
 
@@ -286,7 +287,6 @@ fn activate(n: &mut Network, reg: &Registry) -> bool
 	}
 	let _ = reg.reregister(tcp, Token(0), Interest::READABLE);
 	let _ = reg.register(&mut n.udp, Token(1), Interest::READABLE);
-	n.ready = true;
 	n.send(ToServer::Setup(n.udp.local_addr().unwrap().port()));
 	n.udpSequence.clear();
 	true
@@ -307,6 +307,8 @@ pub fn search()
 		&mut udp, Token(0),
 		Interest::READABLE
 	).expect("Failed to add UDP socket to registry");
+
+	println!("Started searching...");
 
 	let _ = udp.send_to(&[], "255.255.255.255:26225".parse().unwrap());
 	
@@ -339,4 +341,6 @@ pub fn search()
 			}
 		}
 	}
+
+	println!("Stopped searching.");
 }

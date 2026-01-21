@@ -266,7 +266,7 @@ impl Text
 
 	pub fn setColor(&mut self, clr: glam::Vec4) { self.color = clr; }
 
-	pub fn getColor(&self) -> glam::Vec4 { self.color }
+	pub fn getColor(&self) -> glam::Vec4 { self.color * 255.0 }
 	
 	pub fn getTransformable(&mut self) -> &mut Transformable2D { &mut self.ts }
 }

@@ -133,14 +133,34 @@ pub fn main()
 							{
 								"saveSettings-success" => { println!("Settings saved."); }
 								"saveSettings-fail" => { println!("Failed to save settings."); }
-								x => { println!("New modal:\n{x}: {result:#}") }
+								"stopServer" =>
+								{
+									if let Some(x) = result["pwd"].as_str()
+									{
+										if x == cfg.password
+										{
+											println!("Correct password. Stopping the server...");
+											std::process::exit(0);
+										}
+										else
+										{
+											println!("Incorrect password to stop the server.");
+										}
+									}
+									else
+									{
+										println!("Revoked request to stop the server.");
+									}
+								}
+								x => { println!("New modal: {x}: {result:#}") }
 							}
 						}
 						web::Req::Buttons =>
 						{
 							let _ = toWeb.send((id, web::Resp::Buttons(vec![
 								(String::from("setVisible"), String::from("Открыть врата")),
-								(String::from("setInvisible"), String::from("Закрыть врата"))
+								(String::from("setInvisible"), String::from("Закрыть врата")),
+								(String::from("stop"), String::from("Остановить сервер"))
 							])));
 						}
 						web::Req::ClickButton(btn) =>
@@ -152,6 +172,12 @@ pub fn main()
 							if btn == "setInvisible"
 							{
 								let _ = toSession.send((0, player::Resp::SetVisible(id, false)));
+							}
+							if btn == "stop"
+							{
+								let _ = toWeb.send((
+									id, web::Resp::Modal("stopServer".to_string())
+								));
 							}
 						}
 					}
